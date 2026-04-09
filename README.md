@@ -2,6 +2,8 @@
 
 A local web dashboard for browsing [Teku](https://github.com/Consensys/teku) GitHub Actions test results — faster and easier to navigate than the default GitHub Actions UI.
 
+![Teku CI](images/teku-ci.png)
+
 ## Features
 
 - Enter a CI run number and instantly see all test results across unit, integration, acceptance, property and reference test suites
