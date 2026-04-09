@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teku CI</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #2dd4bf;
+  --accent-dim: rgba(45,212,191,.1);
+  --success: #3fb950;
+  --error: #f85149;
+  --warning: #e3b341;
+  --skipped: #6e7681;
+  --blue: #58a6ff;
+  --r: 6px;
+  --mono: 'Cascadia Code','Fira Code','Consolas',monospace;
+}
+
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.5; }
+
+/* ── Header ── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+.logo-mark { width: 28px; height: 28px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; color: #0d1117; letter-spacing: -1px; }
+.logo-text { font-size: 15px; font-weight: 700; }
+.logo-text em { color: var(--accent); font-style: normal; }
+
+.run-form { display: flex; align-items: center; gap: 8px; flex: 1; max-width: 520px; }
+.run-form label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color .15s;
+}
+input:focus { border-color: var(--accent); }
+input::placeholder { color: var(--muted); }
+.run-input { width: 140px; font-family: var(--mono); }
+.token-input { width: 190px; font-family: var(--mono); }
+
+button.load-btn {
+  background: var(--accent);
+  color: #0d1117;
+  border: none;
+  border-radius: var(--r);
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s;
+  white-space: nowrap;
+}
+button.load-btn:hover { opacity: .85; }
+button.load-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── Run info bar ── */
+#run-bar {
+  display: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 24px;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.run-name { font-weight: 600; }
+.run-meta { display: flex; gap: 12px; color: var(--muted); flex-wrap: wrap; align-items: center; }
+.run-meta code { font-family: var(--mono); font-size: 12px; }
+.run-meta a { color: var(--blue); text-decoration: none; }
+.run-meta a:hover { text-decoration: underline; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.badge.success { background: rgba(63,185,80,.15); color: var(--success); }
+.badge.failure { background: rgba(248,81,73,.15); color: var(--error); }
+.badge.progress { background: rgba(88,166,255,.1); color: var(--blue); }
+.badge.neutral  { background: var(--surface-2); color: var(--muted); }
+
+/* ── Stats ── */
+#stats-bar { display: none; padding: 14px 24px; gap: 10px; flex-wrap: wrap; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 18px; text-align: center; min-width: 82px; }
+.stat .n { font-size: 26px; font-weight: 700; line-height: 1; }
+.stat .l { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-top: 3px; }
+.stat.s-fail .n { color: var(--error); }
+.stat.s-pass .n { color: var(--success); }
+.stat.s-skip .n { color: var(--skipped); }
+
+/* ── Toolbar ── */
+#toolbar { display: none; padding: 10px 24px; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; }
+.tab { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 13px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; }
+.tab:hover:not(.active) { border-color: var(--muted); color: var(--text); }
+.tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.search { flex: 1; max-width: 300px; }
+#expand-all { background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; border-radius: var(--r); font-size: 12px; cursor: pointer; margin-left: auto; }
+#expand-all:hover { color: var(--text); }
+
+/* ── Loader / error ── */
+#loader { display: none; flex-direction: column; align-items: center; padding: 80px 24px; gap: 14px; color: var(--muted); }
+.spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#error-box { display: none; margin: 24px; padding: 14px 16px; background: rgba(248,81,73,.08); border: 1px solid rgba(248,81,73,.25); border-radius: var(--r); color: var(--error); font-size: 13px; }
+
+/* ── Results ── */
+main { padding: 16px 24px 40px; }
+
+.group { margin-bottom: 20px; }
+.group-hdr { display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); }
+.group-hdr:hover .gtitle { color: var(--accent); }
+.gchev { font-size: 10px; color: var(--muted); transition: transform .2s; }
+.group-hdr.closed .gchev { transform: rotate(-90deg); }
+.gtitle { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+.gpill { margin-left: auto; display: flex; gap: 10px; font-size: 12px; }
+.gpill .gf { color: var(--error); font-weight: 600; }
+.gpill .gt { color: var(--muted); }
+.group-body.closed { display: none; }
+
+.suite { border-bottom: 1px solid var(--border); }
+.suite-hdr { display: flex; align-items: center; gap: 8px; padding: 7px 4px 7px 8px; cursor: pointer; user-select: none; }
+.suite-hdr:hover { background: var(--surface); }
+.schev { font-size: 9px; color: var(--muted); transition: transform .15s; flex-shrink: 0; }
+.suite-hdr.closed .schev { transform: rotate(-90deg); }
+.sname { font-family: var(--mono); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sname .pkg { opacity: .5; }
+.scounts { flex-shrink: 0; display: flex; gap: 8px; font-size: 11px; }
+.sc-f { color: var(--error); }
+.sc-p { color: var(--success); }
+.sc-t { color: var(--muted); }
+.suite-cases.closed { display: none; }
+
+.tc { border-left: 2px solid transparent; }
+.tc.failed { border-left-color: var(--error); }
+.tc.error  { border-left-color: var(--warning); }
+.tc.skipped { border-left-color: var(--skipped); }
+
+.tc-hdr { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 18px; cursor: pointer; user-select: none; }
+.tc-hdr:hover { background: var(--surface); }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.failed .dot { background: var(--error); }
+.error .dot  { background: var(--warning); }
+.skipped .dot { background: var(--skipped); }
+.passed .dot { background: var(--success); }
+.tc-name { flex: 1; font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-dur { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.tc-arr { font-size: 9px; color: var(--muted); flex-shrink: 0; transition: transform .15s; }
+.tc-hdr.open .tc-arr { transform: rotate(90deg); }
+
+.tc-detail { display: none; padding: 6px 8px 10px 34px; border-top: 1px solid var(--border); background: var(--surface); }
+.tc-detail.open { display: block; }
+
+.fail-msg { font-family: var(--mono); font-size: 12px; color: var(--error); background: rgba(248,81,73,.07); border-radius: var(--r); padding: 8px 10px; margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
+.tc.error .fail-msg { color: var(--warning); background: rgba(227,179,65,.07); }
+
+.stack-btn { display: inline-flex; align-items: center; gap: 4px; margin-top: 7px; color: var(--blue); font-size: 12px; cursor: pointer; background: none; border: none; padding: 0; font-weight: 500; }
+.stack-btn:hover { text-decoration: underline; }
+
+.stack { display: none; margin-top: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; font-family: var(--mono); font-size: 11px; line-height: 1.65; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 380px; overflow-y: auto; }
+.stack.open { display: block; }
+
+.empty { text-align: center; padding: 60px 24px; color: var(--muted); }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">T</div>
+    <span class="logo-text">Teku <em>CI</em></span>
+  </div>
+  <form class="run-form" id="form">
+    <label for="run-id">Run #</label>
+    <input id="run-id" class="run-input" type="text" placeholder="24181827923" autocomplete="off" spellcheck="false">
+    <label for="token">Token</label>
+    <input id="token" class="token-input" type="password" placeholder="ghp_…">
+    <button class="load-btn" type="submit" id="load-btn">Load</button>
+  </form>
+</header>
+
+<div id="run-bar"></div>
+<div id="stats-bar" style="display:none;flex-wrap:wrap;"></div>
+<div id="toolbar" style="display:none;"></div>
+<div id="loader"><div class="spinner"></div><span>Downloading test reports…</span></div>
+<div id="error-box"></div>
+<main id="results"></main>
+
+<script>
+let data = null;
+let testFilter = 'failed';
+let search = '';
+
+const $ = id => document.getElementById(id);
+
+// Persist token
+const tokenEl = $('token');
+tokenEl.value = localStorage.getItem('teku-token') || '';
+tokenEl.addEventListener('change', () => localStorage.setItem('teku-token', tokenEl.value));
+
+// Restore last run id
+const runEl = $('run-id');
+runEl.value = localStorage.getItem('teku-run') || '';
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const runId = runEl.value.trim().replace(/\D/g, '');
+  if (!runId) return;
+  localStorage.setItem('teku-run', runId);
+  await load(runId);
+});
+
+// Auto-load only from explicit URL hash (e.g. bookmarked link)
+const hashRun = location.hash.match(/^#(\d+)$/)?.[1];
+if (hashRun) { runEl.value = hashRun; load(hashRun); }
+
+async function load(runId) {
+  reset();
+  $('loader').style.display = 'flex';
+  $('load-btn').disabled = true;
+
+  const qs = new URLSearchParams();
+  if (tokenEl.value.trim()) qs.set('token', tokenEl.value.trim());
+
+  try {
+    const res = await fetch(`/api/run/${runId}?${qs}`);
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+    data = json;
+    history.replaceState(null, '', `#${runId}`);
+    render();
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    $('loader').style.display = 'none';
+    $('load-btn').disabled = false;
+  }
+}
+
+function render() {
+  const { run, artifacts } = data;
+
+  // Run bar
+  const rb = $('run-bar');
+  rb.style.display = 'flex';
+  const conc = run.conclusion || run.status;
+  const bcls = conc === 'success' ? 'success' : conc === 'failure' ? 'failure' : conc === 'in_progress' ? 'progress' : 'neutral';
+  rb.innerHTML = `
+    <span class="run-name">${esc(run.name)} #${run.run_number}</span>
+    <span class="badge ${bcls}">${conc?.replace(/_/g,' ') || '—'}</span>
+    <div class="run-meta">
+      <span>branch: <code>${esc(run.head_branch)}</code></span>
+      <span>commit: <code>${esc(run.head_sha)}</code></span>
+      ${run.actor ? `<span>by ${esc(run.actor)}</span>` : ''}
+      <a href="${esc(run.html_url)}" target="_blank">GitHub ↗</a>
+    </div>`;
+
+  // Stats
+  let total = 0, fail = 0, err = 0, skip = 0, pass = 0;
+  for (const { suites } of artifacts)
+    for (const s of suites)
+      for (const tc of s.testcases) {
+        total++;
+        if (tc.status === 'failed') fail++;
+        else if (tc.status === 'error') err++;
+        else if (tc.status === 'skipped') skip++;
+        else pass++;
+      }
+
+  const sb = $('stats-bar');
+  sb.style.display = 'flex';
+  sb.innerHTML = `
+    <div class="stat s-fail"><div class="n">${fail + err}</div><div class="l">Failures</div></div>
+    <div class="stat s-pass"><div class="n">${pass}</div><div class="l">Passed</div></div>
+    <div class="stat s-skip"><div class="n">${skip}</div><div class="l">Skipped</div></div>
+    <div class="stat"><div class="n">${total}</div><div class="l">Total</div></div>`;
+
+  // Toolbar
+  const tb = $('toolbar');
+  tb.style.display = 'flex';
+  tb.innerHTML = `
+    <div class="tabs">
+      <button class="tab active" data-f="failed">Failed (${fail + err})</button>
+      <button class="tab" data-f="all">All</button>
+      <button class="tab" data-f="skipped">Skipped</button>
+    </div>
+    <input type="text" class="search" placeholder="Search tests…" id="search-box">
+    <button id="expand-all">Expand all failures</button>`;
+
+  tb.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    tb.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    testFilter = t.dataset.f;
+    renderResults();
+  }));
+  $('search-box').addEventListener('input', e => { search = e.target.value; renderResults(); });
+  $('expand-all').addEventListener('click', expandAll);
+
+  renderResults();
+}
+
+function renderResults() {
+  const container = $('results');
+  container.innerHTML = '';
+
+  const groups = {};
+  for (const art of data.artifacts) {
+    const type = art.artifactName.match(/^(unit|integration|acceptance|property|reference)/)?.[1] || 'other';
+    (groups[type] = groups[type] || []).push(art);
+  }
+
+  const order = ['unit', 'integration', 'acceptance', 'property', 'reference', 'other'];
+  const q = search.toLowerCase();
+  let shown = 0;
+  const errors = data.artifacts.filter(a => a.error);
+
+  for (const type of order) {
+    if (!groups[type]) continue;
+    const el = buildGroup(type, groups[type], q);
+    if (el) { container.appendChild(el); shown++; }
+  }
+
+  if (shown === 0) {
+    if (errors.some(a => a.error?.includes('401') || a.error?.includes('403'))) {
+      const box = document.createElement('div');
+      box.className = 'error-box';
+      box.style.display = 'block';
+      box.innerHTML = `<strong>Authentication required.</strong><br><br>GitHub requires a token to download artifacts even for public repos. Enter one in the Token field above.`;
+      container.appendChild(box);
+    } else if (data.artifacts.length === 0) {
+      // No artifacts at all — tests likely never ran
+      container.appendChild(buildNoArtifactsInfo());
+    } else {
+      container.innerHTML = '<div class="empty">No tests match the current filter</div>';
+    }
+  }
+}
+
+function buildGroup(type, artifacts, q) {
+  const suites = [];
+  for (const art of artifacts)
+    for (const s of art.suites) {
+      const cases = filterCases(s.testcases, q);
+      if (cases.length) suites.push({ ...s, testcases: cases });
+    }
+  if (!suites.length) return null;
+
+  suites.sort((a, b) => fails(b.testcases) - fails(a.testcases));
+
+  const total = suites.reduce((n, s) => n + s.testcases.length, 0);
+  const f = suites.reduce((n, s) => n + fails(s.testcases), 0);
+
+  const labels = { unit:'Unit Tests', integration:'Integration Tests', acceptance:'Acceptance Tests', property:'Property Tests', reference:'Reference Tests', other:'Other' };
+
+  const wrap = document.createElement('div');
+  wrap.className = 'group';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'group-hdr';
+  hdr.innerHTML = `<span class="gchev">▼</span><span class="gtitle">${labels[type] || type}</span>
+    <div class="gpill">${f ? `<span class="gf">⚑ ${f} failed</span>` : ''}<span class="gt">${total} shown</span></div>`;
+
+  const body = document.createElement('div');
+  body.className = 'group-body';
+
+  hdr.addEventListener('click', () => { hdr.classList.toggle('closed'); body.classList.toggle('closed'); });
+
+  for (const s of suites) body.appendChild(buildSuite(s));
+  wrap.appendChild(hdr);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function buildSuite(suite) {
+  const f = fails(suite.testcases);
+  const p = suite.testcases.filter(t => t.status === 'passed').length;
+  const parts = suite.name.split('.');
+  const short = parts.pop();
+  const pkg = parts.length ? parts.join('.') + '.' : '';
+
+  const el = document.createElement('div');
+  el.className = 'suite';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'suite-hdr';
+  hdr.innerHTML = `<span class="schev">▼</span>
+    <span class="sname"><span class="pkg">${esc(pkg)}</span>${esc(short)}</span>
+    <div class="scounts">
+      ${f ? `<span class="sc-f">✕ ${f}</span>` : ''}
+      ${p ? `<span class="sc-p">✓ ${p}</span>` : ''}
+      ${suite.time ? `<span class="sc-t">${suite.time.toFixed(2)}s</span>` : ''}
+    </div>`;
+
+  const cases = document.createElement('div');
+  cases.className = 'suite-cases';
+
+  const sorted = [...suite.testcases].sort((a, b) => ({ failed:0, error:0, skipped:1, passed:2 }[a.status]??3) - ({ failed:0, error:0, skipped:1, passed:2 }[b.status]??3));
+  for (const tc of sorted) cases.appendChild(buildTC(tc));
+
+  hdr.addEventListener('click', () => { hdr.classList.toggle('closed'); cases.classList.toggle('closed'); });
+  el.appendChild(hdr);
+  el.appendChild(cases);
+  return el;
+}
+
+function buildTC(tc) {
+  const el = document.createElement('div');
+  el.className = `tc ${tc.status}`;
+  const hasDetail = tc.failure && (tc.failure.message || tc.failure.detail);
+  const dur = tc.time ? `${tc.time.toFixed(3)}s` : '';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'tc-hdr';
+  hdr.innerHTML = `<span class="dot"></span><span class="tc-name">${esc(tc.name)}</span>${dur ? `<span class="tc-dur">${dur}</span>` : ''}${hasDetail ? '<span class="tc-arr">▶</span>' : ''}`;
+  el.appendChild(hdr);
+
+  if (hasDetail) {
+    const msg = tc.failure.message?.trim() || '';
+    const stack = tc.failure.detail?.trim() || '';
+    const hasStack = stack && stack !== msg && stack.length > msg.length;
+
+    const detail = document.createElement('div');
+    detail.className = 'tc-detail';
+    detail.innerHTML = `<div class="fail-msg">${esc(msg || stack)}</div>` +
+      (hasStack ? `<button class="stack-btn" type="button">▶ Stack trace</button><pre class="stack">${esc(stack)}</pre>` : '');
+    el.appendChild(detail);
+
+    hdr.addEventListener('click', () => {
+      const open = detail.classList.toggle('open');
+      hdr.classList.toggle('open', open);
+    });
+
+    const btn = detail.querySelector('.stack-btn');
+    const pre = detail.querySelector('.stack');
+    if (btn && pre) btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const v = pre.classList.toggle('open');
+      btn.textContent = v ? '▼ Stack trace' : '▶ Stack trace';
+    });
+
+    if (tc.status === 'failed' || tc.status === 'error') {
+      detail.classList.add('open');
+      hdr.classList.add('open');
+    }
+  }
+  return el;
+}
+
+function buildNoArtifactsInfo() {
+  const jobs = data.jobs || {};
+  const failedJobs = jobs.failed || [];
+  const skippedTests = jobs.skippedTests || [];
+
+  const el = document.createElement('div');
+  el.style.cssText = 'max-width:560px;margin:40px auto;text-align:center;';
+
+  const nonTestFailed = failedJobs.filter(n => !/Report|Result/i.test(n));
+  const buildFailed = nonTestFailed.length > 0;
+  const testsWereSkipped = skippedTests.length > 0;
+
+  if (buildFailed) {
+    el.innerHTML = `
+      <div style="font-size:36px;margin-bottom:12px">🏗️</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px">Build failed — tests did not run</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:16px">
+        ${testsWereSkipped ? 'The following job(s) failed before tests could execute, causing all test jobs to be skipped.' : 'The following non-test job(s) failed. No test artifacts were produced.'}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:20px">
+        ${nonTestFailed.map(n => `<span style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--error);padding:3px 10px;border-radius:4px;font-family:var(--mono);font-size:12px">${esc(n)}</span>`).join('')}
+      </div>
+      <a href="${esc(data.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub ↗</a>`;
+  } else if (data.run.status === 'in_progress') {
+    el.innerHTML = `
+      <div style="font-size:36px;margin-bottom:12px">⏳</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px">Tests still running</div>
+      <div style="color:var(--muted);font-size:13px">No test artifacts have been uploaded yet. Try again in a moment.</div>`;
+  } else {
+    el.innerHTML = `
+      <div style="font-size:36px;margin-bottom:12px">📭</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px">No test artifacts found</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px">This run did not produce any test report artifacts.</div>
+      <a href="${esc(data.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub ↗</a>`;
+  }
+  return el;
+}
+
+function filterCases(cases, q) {
+  return cases.filter(tc => {
+    if (testFilter === 'failed' && tc.status !== 'failed' && tc.status !== 'error') return false;
+    if (testFilter === 'skipped' && tc.status !== 'skipped') return false;
+    if (q && !tc.name.toLowerCase().includes(q) && !tc.classname.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function expandAll() {
+  document.querySelectorAll('.tc.failed .tc-detail, .tc.error .tc-detail').forEach(d => { d.classList.add('open'); d.previousElementSibling?.classList.add('open'); });
+  document.querySelectorAll('.suite-cases, .group-body').forEach(c => c.classList.remove('closed'));
+  document.querySelectorAll('.suite-hdr, .group-hdr').forEach(h => h.classList.remove('closed'));
+}
+
+function fails(cases) { return cases.filter(t => t.status === 'failed' || t.status === 'error').length; }
+
+function reset() {
+  $('run-bar').style.display = 'none';
+  $('stats-bar').style.display = 'none';
+  $('toolbar').style.display = 'none';
+  $('error-box').style.display = 'none';
+  $('results').innerHTML = '';
+  data = null;
+}
+
+function showError(msg) {
+  const el = $('error-box');
+  el.style.display = 'block';
+  const need401 = msg.includes('401') || msg.includes('403');
+  el.innerHTML = `<strong>Error:</strong> ${esc(msg)}` +
+    (need401 ? '<br><br>Enter a GitHub personal access token in the Token field — required even for public repo artifacts.' : '');
+}
+
+function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
