@@ -75,6 +75,140 @@ async function downloadArtifact(artifactId, artifactName, token) {
   return { artifactName, suites };
 }
 
+// ── Check run summary fallback (for expired artifacts) ───────────────────────
+
+const TEST_REPORT_JOB_RE = /^(unit|integration|acceptance|property|reference)TestsReport$/i;
+
+function htmlDecode(str) {
+  return str.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
+}
+
+function stripTags(str) {
+  return str.replace(/<[^>]+>/g, '').trim();
+}
+
+// Parse dorny/test-reporter HTML summary into structured suites
+function parseReportHtml(name, html) {
+  if (!html) return null;
+
+  // Extract stats row: Tests | Passed | Failed | Skipped
+  const statsMatch = html.match(/<td[^>]*>(\d+)<\/td>\s*<td[^>]*>(\d+)<\/td>\s*<td[^>]*>(\d+)<\/td>\s*<td[^>]*>(\d+)<\/td>/);
+  const total    = statsMatch ? parseInt(statsMatch[1]) : 0;
+  const passed   = statsMatch ? parseInt(statsMatch[2]) : 0;
+  const failed   = statsMatch ? parseInt(statsMatch[3]) : 0;
+  const skipped  = statsMatch ? parseInt(statsMatch[4]) : 0;
+
+  // Extract individual failures from <details> blocks
+  const testcases = [];
+
+  // Add all non-failed tests as a single passed block so counts show correctly
+  const passCount = passed + skipped;
+
+  // Extract failures: dorny/test-reporter wraps each failure in <details>
+  const detailsRe = /<details[^>]*>([\s\S]*?)<\/details>/gi;
+  let m;
+  while ((m = detailsRe.exec(html)) !== null) {
+    const inner = m[1];
+    const summaryMatch = /<summary[^>]*>([\s\S]*?)<\/summary>/i.exec(inner);
+    if (!summaryMatch) continue;
+    const rawName = htmlDecode(stripTags(summaryMatch[1])).replace(/^[❌✅⚠️\s]+/, '').trim();
+    if (!rawName || rawName.length < 3) continue;
+
+    // Stack trace is in <pre> or remaining text after <summary>
+    const preMatch = /<pre[^>]*>([\s\S]*?)<\/pre>/i.exec(inner);
+    const raw = preMatch ? htmlDecode(preMatch[1]).trim() : '';
+
+    // Skip non-test details (e.g. suite-level details with no stack trace)
+    if (!raw && !preMatch) continue;
+
+    const lines = raw.split('\n');
+    testcases.push({
+      classname: name,
+      name: rawName,
+      time: 0,
+      status: 'failed',
+      failure: {
+        message: lines[0]?.trim() || rawName,
+        detail: raw,
+        type: '',
+      },
+    });
+  }
+
+  // If no <details> failures found, try to extract from table rows with ❌
+  if (testcases.length === 0 && failed > 0) {
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    while ((m = rowRe.exec(html)) !== null) {
+      const row = m[1];
+      if (!row.includes('❌') && !row.includes('failure')) continue;
+      const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(c => htmlDecode(stripTags(c[1])).trim());
+      const testName = cells.find(c => c.length > 3 && !/^\d+$/.test(c) && !['❌','✅','⚠️'].includes(c));
+      if (testName) {
+        testcases.push({ classname: name, name: testName, time: 0, status: 'failed', failure: { message: testName, detail: '', type: '' } });
+      }
+    }
+  }
+
+  return {
+    name,
+    time: 0,
+    total, passed, failed, skipped,
+    testcases,
+    fromCheckRun: true,
+  };
+}
+
+async function fetchCheckRunSummaries(sha, token) {
+  if (!token) return [];
+
+  // Use GraphQL — REST API returns null for output.summary on public repos without specific scopes
+  const query = `{
+    repository(owner: "${OWNER}", name: "${REPO}") {
+      object(expression: "${sha}") {
+        ... on Commit {
+          checkSuites(first: 20) {
+            nodes {
+              checkRuns(first: 100) {
+                nodes { databaseId name conclusion summary }
+              }
+            }
+          }
+        }
+      }
+    }
+  }`;
+
+  const res = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'teku-ci',
+    },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!res.ok) return [];
+  const data = await res.json();
+  if (data.errors) { console.error('GraphQL errors:', data.errors); return []; }
+
+  const allRuns = (data.data?.repository?.object?.checkSuites?.nodes || [])
+    .flatMap(s => s.checkRuns?.nodes || []);
+
+  // Deduplicate by name (same check run can appear in multiple suites)
+  const seen = new Set();
+  const testReportRuns = allRuns.filter(cr => {
+    if (!TEST_REPORT_JOB_RE.test(cr.name) || seen.has(cr.name)) return false;
+    seen.add(cr.name);
+    return true;
+  });
+
+  return testReportRuns
+    .map(cr => parseReportHtml(cr.name, cr.summary))
+    .filter(Boolean);
+}
+
 // GET /api/run/:runId
 app.get('/api/run/:runId', async (req, res) => {
   const { runId } = req.params;
@@ -93,6 +227,8 @@ app.get('/api/run/:runId', async (req, res) => {
     const testArtifacts = artifacts.filter((a) =>
       /^(unit|integration|acceptance|property|reference)-reports-/.test(a.name)
     );
+    const expiredCount = testArtifacts.filter((a) => a.expired).length;
+    const downloadableArtifacts = testArtifacts.filter((a) => !a.expired);
 
     // Summarise job outcomes for the UI
     const failedJobs = jobs.filter((j) => j.conclusion === 'failure').map((j) => j.name);
@@ -100,11 +236,19 @@ app.get('/api/run/:runId', async (req, res) => {
       j.conclusion === 'skipped' && /unit|integration|acceptance|property|reference/i.test(j.name)
     ).map((j) => j.name);
 
-    console.log(`Run ${runId}: downloading ${testArtifacts.length} test artifacts…`);
+    console.log(`Run ${runId}: ${downloadableArtifacts.length} downloadable, ${expiredCount} expired test artifacts…`);
 
     const artifactResults = await Promise.all(
-      testArtifacts.map((a) => downloadArtifact(a.id, a.name, token))
+      downloadableArtifacts.map((a) => downloadArtifact(a.id, a.name, token))
     );
+
+    // Fall back to check run summaries when all artifacts are expired
+    let checkRunSuites = [];
+    if (expiredCount > 0 && downloadableArtifacts.length === 0) {
+      console.log(`Run ${runId}: fetching check run summaries (artifacts expired)…`);
+      checkRunSuites = await fetchCheckRunSummaries(runData.head_sha, token);
+      console.log(`Run ${runId}: got ${checkRunSuites.length} check run summaries`);
+    }
 
     const result = {
       run: {
@@ -120,7 +264,9 @@ app.get('/api/run/:runId', async (req, res) => {
         run_number: runData.run_number,
       },
       jobs: { failed: failedJobs, skippedTests: skippedTestJobs },
+      expiredArtifacts: expiredCount,
       artifacts: artifactResults,
+      checkRunSuites,
     };
 
     if (runData.status === 'completed') cache.set(cacheKey, result);

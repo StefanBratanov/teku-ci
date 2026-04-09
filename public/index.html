@@ -264,7 +264,7 @@ async function load(runId) {
 }
 
 function render() {
-  const { run, artifacts } = data;
+  const { run, artifacts, checkRunSuites = [] } = data;
 
   // Run bar
   const rb = $('run-bar');
@@ -283,7 +283,8 @@ function render() {
 
   // Stats
   let total = 0, fail = 0, err = 0, skip = 0, pass = 0;
-  for (const { suites } of artifacts)
+  const allSuiteSources = [...artifacts, ...checkRunSuites.map(s => ({ suites: [s] }))];
+  for (const { suites } of allSuiteSources)
     for (const s of suites)
       for (const tc of s.testcases) {
         total++;
@@ -329,10 +330,16 @@ function renderResults() {
   const container = $('results');
   container.innerHTML = '';
 
+  // Merge regular artifacts and check run suites into the same group structure
   const groups = {};
   for (const art of data.artifacts) {
     const type = art.artifactName.match(/^(unit|integration|acceptance|property|reference)/)?.[1] || 'other';
     (groups[type] = groups[type] || []).push(art);
+  }
+  for (const suite of (data.checkRunSuites || [])) {
+    const type = suite.name.match(/^(unit|integration|acceptance|property|reference)/i)?.[1]?.toLowerCase() || 'other';
+    const fakeArt = { artifactName: suite.name, suites: [suite] };
+    (groups[type] = groups[type] || []).push(fakeArt);
   }
 
   const order = ['unit', 'integration', 'acceptance', 'property', 'reference', 'other'];
@@ -353,8 +360,11 @@ function renderResults() {
       box.style.display = 'block';
       box.innerHTML = `<strong>Authentication required.</strong><br><br>GitHub requires a token to download artifacts even for public repos. Enter one in the Token field above.`;
       container.appendChild(box);
+    } else if (data.expiredArtifacts > 0 && data.checkRunSuites?.length > 0) {
+      container.appendChild(buildExpiredBanner());
+    } else if (data.expiredArtifacts > 0 && data.artifacts.length === 0) {
+      container.appendChild(buildExpiredInfo());
     } else if (data.artifacts.length === 0) {
-      // No artifacts at all — tests likely never ran
       container.appendChild(buildNoArtifactsInfo());
     } else {
       container.innerHTML = '<div class="empty">No tests match the current filter</div>';
@@ -469,6 +479,28 @@ function buildTC(tc) {
       hdr.classList.add('open');
     }
   }
+  return el;
+}
+
+function buildExpiredBanner() {
+  const el = document.createElement('div');
+  el.style.cssText = 'margin-bottom:14px;padding:10px 14px;background:rgba(227,179,65,.08);border:1px solid rgba(227,179,65,.25);border-radius:6px;font-size:12px;color:var(--warning);display:flex;align-items:center;gap:8px;';
+  el.innerHTML = `<span>🗓️</span> Artifacts expired — results loaded from GitHub check run summaries. Stack traces may be limited.`;
+  return el;
+}
+
+function buildExpiredInfo() {
+  const el = document.createElement('div');
+  el.style.cssText = 'max-width:520px;margin:40px auto;text-align:center;';
+  el.innerHTML = `
+    <div style="font-size:36px;margin-bottom:12px">🗓️</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:8px">Artifacts expired</div>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:16px">
+      The ${data.expiredArtifacts} test report artifact${data.expiredArtifacts > 1 ? 's' : ''} for this run
+      have been deleted by GitHub (default retention is 90 days).
+      ${!tokenEl.value.trim() ? '<br><br>Enter a GitHub token above — test results can still be loaded from check run summaries.' : 'Check run summaries were not found for this run.'}
+    </div>
+    <a href="${esc(data.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub ↗</a>`;
   return el;
 }
 
