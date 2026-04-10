@@ -7,12 +7,12 @@ A dashboard for browsing [Teku](https://github.com/Consensys/teku) GitHub Action
 ## Features
 
 - All open PRs polled automatically — no manual refresh needed
-- Passing PRs hidden by default; dashboard shows only failing, building, and pending PRs
+- Passing PRs visible in the "All" view but non-clickable; dashboard highlights failing, building, and pending PRs by default
 - Test counts (passed / failed) shown on each PR card
 - Failing tests auto-expanded with assertion message visible immediately; click for full stack trace
 - Build-failure detection: distinguishes between a job that failed before tests ran vs a non-test job (e.g. `windowsBuild`) that failed while tests still passed
 - Expired artifact fallback: loads test results from GitHub check-run summaries when artifacts have been deleted
-- Filter PRs by status: Failing / Building / Build Failed / Pending / Passing
+- Filter PRs by status: Failing Tests / Building / Build Failed / Pending / Passing
 - Search tests by name within any PR
 
 ---
@@ -38,6 +38,12 @@ GITHUB_TOKEN=ghp_your_token_here npm start
 
 Open `http://localhost:3000`. The server fetches all open PRs immediately on startup, downloads test artifacts, and begins polling automatically.
 
+For development with auto-reload:
+
+```bash
+GITHUB_TOKEN=ghp_your_token_here npm run dev
+```
+
 ---
 
 ## How it works
@@ -47,7 +53,7 @@ Express server (server.js)
 ├── GET  /api/state   → returns current PR state as JSON
 ├── POST /api/refresh → triggers an immediate refresh
 ├── /*                → serves static files from public/
-└── Polling loop      → runs every 2 min (30s when any PR is building)
+└── Polling loop      → runs every 1 min (30s when any PR is building)
         ├── Fetches all open PRs from GitHub REST API
         ├── For each PR: fetches CI run, artifacts list, and jobs list
         ├── Downloads & parses JUnit XML from test report ZIPs
@@ -55,7 +61,7 @@ Express server (server.js)
         └── Stores full results in memory
 ```
 
-**Polling intervals:** 2 minutes normally; 30 seconds while any PR is still building.
+**Polling intervals:** 1 minute normally; 30 seconds while any PR is still building.
 
 **State storage:** in-memory only — state is rebuilt on restart (first refresh happens immediately).
 

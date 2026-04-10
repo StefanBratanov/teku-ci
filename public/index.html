@@ -128,6 +128,7 @@ header {
 
 .in-progress-jobs { margin-top: 4px; font-size: 11px; color: var(--blue); }
 
+
 /* ── Init / empty states ── */
 #init-screen { display: flex; flex-direction: column; align-items: center; padding: 80px 24px; gap: 14px; color: var(--muted); }
 #empty-list { display: none; text-align: center; padding: 60px 24px; color: var(--muted); }
@@ -406,7 +407,7 @@ function renderList() {
   // Filter bar — "All" includes passing (passing cards are non-clickable)
   const filterDefs = [
     { key: 'all',          label: 'All',         count: prs.length },
-    { key: 'failing',      label: 'Failing',     count: counts.failing },
+    { key: 'failing',      label: 'Failing Tests', count: counts.failing },
     { key: 'building',     label: 'Building',    count: counts.building },
     { key: 'build_failed', label: 'Build Failed',count: counts.build_failed },
     { key: 'pending',      label: 'Pending',     count: counts.pending },
@@ -447,7 +448,7 @@ function buildPRCard(pr) {
     card.style.cursor = 'default';
   }
 
-  const statusLabels = { failing: 'Failing', passing: 'Passing', building: 'Building', build_failed: 'Build Failed', pending: 'Pending' };
+  const statusLabels = { failing: 'Failing Tests', passing: 'Passing', building: 'Building', build_failed: 'Build Failed', pending: 'Pending' };
   const badgeLabel = statusLabels[pr.status] || pr.status;
 
   let countsHtml = '';
@@ -570,7 +571,7 @@ function renderDetail(pr) {
 
   // Run bar
   rb.style.display = 'flex';
-  const statusLabels = { failing: 'Tests Failing', passing: 'Tests Passing', building: 'Building', build_failed: 'Build Failed', pending: 'Pending' };
+  const statusLabels = { failing: 'Failing Tests', passing: 'Tests Passing', building: 'Building', build_failed: 'Build Failed', pending: 'Pending' };
   const badgeCls = { failing: 'failing', passing: 'passing', building: 'building', build_failed: 'build_failed', pending: 'pending' };
   rb.innerHTML = `
     <span class="run-name">#${pr.number} ${esc(pr.title)}</span>
@@ -594,7 +595,8 @@ function renderDetail(pr) {
       $('error-box').innerHTML = `Build job failed${nonTest.length ? ` (<strong>${nonTest.map(esc).join(', ')}</strong>)` : ''} but tests ran — results below.` +
         (pr.run?.html_url ? ` <a href="${esc(pr.run.html_url)}" target="_blank" style="color:var(--blue)">CI run &#8599;</a>` : '');
       renderTestResults({ artifacts: pr.artifacts || [], checkRunSuites: pr.checkRunSuites || [],
-                          expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {} });
+                          expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
+                          runUrl: pr.run?.html_url || null });
       return;
     }
 
@@ -640,7 +642,8 @@ function renderDetail(pr) {
                        pr.artifacts?.some(a => a.suites?.length > 0);
   if (hasLocalData) {
     renderTestResults({ artifacts: pr.artifacts || [], checkRunSuites: pr.checkRunSuites || [],
-                        expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {} });
+                        expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
+                        runUrl: pr.run?.html_url || null });
     return;
   }
 
@@ -665,7 +668,8 @@ async function loadPRTests(pr) {
     if (testData.error) throw new Error(testData.error);
     if (selectedPR !== pr.number) return; // navigated away while fetching
     renderTestResults({ artifacts: testData.artifacts || [], checkRunSuites: testData.checkRunSuites || [],
-                        expiredArtifacts: testData.expiredArtifacts || 0, jobs: pr.jobs || {} });
+                        expiredArtifacts: testData.expiredArtifacts || 0, jobs: pr.jobs || {},
+                        runUrl: pr.run?.html_url || null });
   } catch (e) {
     if (selectedPR !== pr.number) return;
     $('results').innerHTML = `<div class="empty" style="color:var(--error)">Failed to load test results: ${esc(e.message)}</div>`;
@@ -779,7 +783,21 @@ function renderResultsInner(detailData) {
         container.appendChild(el);
       }
     } else {
-      container.innerHTML = '<div class="empty">No tests match the current filter.</div>';
+      const nonTest = detailData.jobs?.failedNonTest || [];
+      if (nonTest.length > 0) {
+        container.innerHTML = `
+          <div style="max-width:560px;margin:40px auto;text-align:center;">
+            <div style="font-size:36px;margin-bottom:12px">&#x1F3D7;&#xFE0F;</div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:8px">Build step failed</div>
+            <div style="color:var(--muted);font-size:13px;margin-bottom:16px">Tests ran successfully, but the following job(s) failed:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:16px">
+              ${nonTest.map(n => `<span style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--error);padding:3px 10px;border-radius:4px;font-family:var(--mono);font-size:12px">${esc(n)}</span>`).join('')}
+            </div>
+            ${detailData.runUrl ? `<a href="${esc(detailData.runUrl)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub &#8599;</a>` : ''}
+          </div>`;
+      } else {
+        container.innerHTML = '<div class="empty">No tests match the current filter.</div>';
+      }
     }
   }
 }
@@ -953,6 +971,7 @@ function timeAgo(iso) {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 

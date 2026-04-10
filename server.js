@@ -12,8 +12,8 @@ const OWNER = 'Consensys';
 const REPO  = 'teku';
 const PORT  = process.env.PORT || 3000;
 
-// Refresh every 2 min normally; every 30s when any PR is still building
-const SLOW_INTERVAL = 2 * 60 * 1000;
+// Refresh every 1 min normally; every 30s when any PR is still building
+const SLOW_INTERVAL = 60 * 1000;
 const FAST_INTERVAL = 30 * 1000;
 
 // ── XML parser ───────────────────────────────────────────────────────────────
@@ -190,8 +190,10 @@ async function processPR(prMeta, existingState) {
   const run = await getLatestCIRun(prMeta.head.sha);
 
   // Nothing changed for a completed run — preserve test data, update metadata only
+  // But re-process if GitHub now says success while we cached a failure (race condition on partial artifacts)
+  const cachedStale = existingState?.status === 'failing' && run?.conclusion === 'success';
   if (existingState?.runId === run?.id && run?.status === 'completed' &&
-      existingState.status !== 'building') {
+      existingState.status !== 'building' && !cachedStale) {
     return { ...existingState, ...prBase(prMeta) };
   }
 
