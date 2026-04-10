@@ -2,32 +2,46 @@ import express from 'express';
 import AdmZip from 'adm-zip';
 import { XMLParser } from 'fast-xml-parser';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const OWNER = 'Consensys';
-const REPO = 'teku';
+const TOKEN = process.env.GITHUB_TOKEN;
+if (!TOKEN) {
+  console.error('ERROR: GITHUB_TOKEN environment variable must be set.');
+  process.exit(1);
+}
 
-app.use(express.static('public'));
+const OWNER = 'Consensys';
+const REPO  = 'teku';
+const PORT  = process.env.PORT || 3000;
+
+// Refresh every 2 min normally; every 30s when any PR is still building
+const SLOW_INTERVAL = 2 * 60 * 1000;
+const FAST_INTERVAL = 30 * 1000;
+
+// ── XML parser ───────────────────────────────────────────────────────────────
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '',
   textNodeName: '#text',
-  isArray: (tagName) => ['testsuite', 'testcase'].includes(tagName),
+  isArray: (t) => ['testsuite', 'testcase'].includes(t),
   parseAttributeValue: false,
 });
 
-const cache = new Map();
+// ── GitHub helpers ───────────────────────────────────────────────────────────
 
-async function ghFetch(path, token) {
+async function ghFetch(path) {
   const url = path.startsWith('http') ? path : `https://api.github.com${path}`;
-  const headers = { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'teku-ci' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return fetch(url, { headers });
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'teku-ci',
+    },
+  });
+  return res;
 }
 
-async function ghJson(path, token) {
-  const res = await ghFetch(path, token);
+async function ghJson(path) {
+  const res = await ghFetch(path);
   if (!res.ok) {
     const body = await res.text();
     throw Object.assign(new Error(`GitHub ${res.status}: ${body.slice(0, 200)}`), { status: res.status });
@@ -35,10 +49,32 @@ async function ghJson(path, token) {
   return res.json();
 }
 
+async function ghGraphQL(query) {
+  const res = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'teku-ci',
+    },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.errors) { console.error('GraphQL errors:', JSON.stringify(data.errors)); return null; }
+  return data.data;
+}
+
+// ── JUnit XML parsing ────────────────────────────────────────────────────────
+
 function extractFailure(node) {
   if (!node) return null;
   if (typeof node === 'string') return { message: node.split('\n')[0], detail: node };
-  return { message: node.message || node['#text']?.split('\n')[0] || '', detail: node['#text'] || node.message || '', type: node.type || '' };
+  return {
+    message: node.message || node['#text']?.split('\n')[0] || '',
+    detail:  node['#text'] || node.message || '',
+    type:    node.type || '',
+  };
 }
 
 function parseXml(xml) {
@@ -48,7 +84,7 @@ function parseXml(xml) {
   return suites.filter(Boolean).map((suite) => {
     const testcases = (suite.testcase || []).map((tc) => {
       let status = 'passed', failure = null;
-      if (tc.failure !== undefined) { status = 'failed'; failure = extractFailure(tc.failure); }
+      if (tc.failure !== undefined) { status = 'failed';  failure = extractFailure(tc.failure); }
       else if (tc.error !== undefined) { status = 'error'; failure = extractFailure(tc.error); }
       else if (tc.skipped !== undefined) { status = 'skipped'; }
       return { classname: tc.classname || '', name: tc.name || '', time: parseFloat(tc.time) || 0, status, failure };
@@ -57,12 +93,9 @@ function parseXml(xml) {
   });
 }
 
-async function downloadArtifact(artifactId, artifactName, token) {
-  const headers = { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'teku-ci' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(
-    `https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${artifactId}/zip`,
-    { headers, redirect: 'follow' }
+async function downloadAndParseArtifact(artifactId, artifactName) {
+  const res = await ghFetch(
+    `https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${artifactId}/zip`
   );
   if (!res.ok) return { artifactName, suites: [], error: `HTTP ${res.status}` };
   const zip = new AdmZip(Buffer.from(await res.arrayBuffer()));
@@ -75,209 +108,248 @@ async function downloadArtifact(artifactId, artifactName, token) {
   return { artifactName, suites };
 }
 
-// ── Check run summary fallback (for expired artifacts) ───────────────────────
+// ── Check-run summary fallback (expired artifacts) ───────────────────────────
 
-const TEST_REPORT_JOB_RE = /^(unit|integration|acceptance|property|reference)TestsReport$/i;
+const TEST_REPORT_RE = /^(unit|integration|acceptance|property|reference)TestsReport$/i;
 
-function htmlDecode(str) {
-  return str.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-            .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
+function htmlDecode(s) {
+  return s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&')
+          .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
 }
+function stripTags(s) { return s.replace(/<[^>]+>/g, '').trim(); }
 
-function stripTags(str) {
-  return str.replace(/<[^>]+>/g, '').trim();
-}
-
-// Parse dorny/test-reporter HTML summary into structured suites
 function parseReportHtml(name, html) {
   if (!html) return null;
-
-  // Extract stats row: Tests | Passed | Failed | Skipped
   const statsMatch = html.match(/<td[^>]*>(\d+)<\/td>\s*<td[^>]*>(\d+)<\/td>\s*<td[^>]*>(\d+)<\/td>\s*<td[^>]*>(\d+)<\/td>/);
-  const total    = statsMatch ? parseInt(statsMatch[1]) : 0;
-  const passed   = statsMatch ? parseInt(statsMatch[2]) : 0;
-  const failed   = statsMatch ? parseInt(statsMatch[3]) : 0;
-  const skipped  = statsMatch ? parseInt(statsMatch[4]) : 0;
+  const total = statsMatch ? parseInt(statsMatch[1]) : 0;
 
-  // Extract individual failures from <details> blocks
   const testcases = [];
-
-  // Add all non-failed tests as a single passed block so counts show correctly
-  const passCount = passed + skipped;
-
-  // Extract failures: dorny/test-reporter wraps each failure in <details>
   const detailsRe = /<details[^>]*>([\s\S]*?)<\/details>/gi;
   let m;
   while ((m = detailsRe.exec(html)) !== null) {
     const inner = m[1];
-    const summaryMatch = /<summary[^>]*>([\s\S]*?)<\/summary>/i.exec(inner);
-    if (!summaryMatch) continue;
-    const rawName = htmlDecode(stripTags(summaryMatch[1])).replace(/^[❌✅⚠️\s]+/, '').trim();
+    const sumM = /<summary[^>]*>([\s\S]*?)<\/summary>/i.exec(inner);
+    if (!sumM) continue;
+    const rawName = htmlDecode(stripTags(sumM[1])).replace(/^[❌✅⚠️\s]+/, '').trim();
     if (!rawName || rawName.length < 3) continue;
-
-    // Stack trace is in <pre> or remaining text after <summary>
-    const preMatch = /<pre[^>]*>([\s\S]*?)<\/pre>/i.exec(inner);
-    const raw = preMatch ? htmlDecode(preMatch[1]).trim() : '';
-
-    // Skip non-test details (e.g. suite-level details with no stack trace)
-    if (!raw && !preMatch) continue;
-
-    const lines = raw.split('\n');
+    const preM = /<pre[^>]*>([\s\S]*?)<\/pre>/i.exec(inner);
+    const raw = preM ? htmlDecode(preM[1]).trim() : '';
     testcases.push({
-      classname: name,
-      name: rawName,
-      time: 0,
-      status: 'failed',
-      failure: {
-        message: lines[0]?.trim() || rawName,
-        detail: raw,
-        type: '',
-      },
+      classname: name, name: rawName, time: 0, status: 'failed',
+      failure: { message: raw.split('\n')[0]?.trim() || rawName, detail: raw, type: '' },
     });
   }
-
-  // If no <details> failures found, try to extract from table rows with ❌
-  if (testcases.length === 0 && failed > 0) {
-    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    while ((m = rowRe.exec(html)) !== null) {
-      const row = m[1];
-      if (!row.includes('❌') && !row.includes('failure')) continue;
-      const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(c => htmlDecode(stripTags(c[1])).trim());
-      const testName = cells.find(c => c.length > 3 && !/^\d+$/.test(c) && !['❌','✅','⚠️'].includes(c));
-      if (testName) {
-        testcases.push({ classname: name, name: testName, time: 0, status: 'failed', failure: { message: testName, detail: '', type: '' } });
-      }
-    }
-  }
-
-  return {
-    name,
-    time: 0,
-    total, passed, failed, skipped,
-    testcases,
-    fromCheckRun: true,
-  };
+  return { name, time: 0, total, testcases, fromCheckRun: true };
 }
 
-async function fetchCheckRunSummaries(sha, token) {
-  if (!token) return [];
-
-  // Use GraphQL — REST API returns null for output.summary on public repos without specific scopes
-  const query = `{
+async function fetchCheckRunSummaries(sha) {
+  const data = await ghGraphQL(`{
     repository(owner: "${OWNER}", name: "${REPO}") {
       object(expression: "${sha}") {
         ... on Commit {
           checkSuites(first: 20) {
             nodes {
               checkRuns(first: 100) {
-                nodes { databaseId name conclusion summary }
+                nodes { name conclusion summary }
               }
             }
           }
         }
       }
     }
-  }`;
-
-  const res = await fetch('https://api.github.com/graphql', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'teku-ci',
-    },
-    body: JSON.stringify({ query }),
-  });
-
-  if (!res.ok) return [];
-  const data = await res.json();
-  if (data.errors) { console.error('GraphQL errors:', data.errors); return []; }
-
-  const allRuns = (data.data?.repository?.object?.checkSuites?.nodes || [])
-    .flatMap(s => s.checkRuns?.nodes || []);
-
-  // Deduplicate by name (same check run can appear in multiple suites)
+  }`);
+  if (!data) return [];
   const seen = new Set();
-  const testReportRuns = allRuns.filter(cr => {
-    if (!TEST_REPORT_JOB_RE.test(cr.name) || seen.has(cr.name)) return false;
-    seen.add(cr.name);
-    return true;
-  });
-
-  return testReportRuns
+  return (data.repository?.object?.checkSuites?.nodes || [])
+    .flatMap(s => s.checkRuns?.nodes || [])
+    .filter(cr => {
+      if (!TEST_REPORT_RE.test(cr.name) || seen.has(cr.name)) return false;
+      seen.add(cr.name); return true;
+    })
     .map(cr => parseReportHtml(cr.name, cr.summary))
     .filter(Boolean);
 }
 
-// GET /api/run/:runId
-app.get('/api/run/:runId', async (req, res) => {
-  const { runId } = req.params;
-  const token = req.query.token || process.env.GITHUB_TOKEN || '';
-  const cacheKey = `${runId}:${token.slice(-6)}`;
+// ── CI run helpers ───────────────────────────────────────────────────────────
 
-  if (cache.has(cacheKey)) return res.json(cache.get(cacheKey));
+async function getLatestCIRun(sha) {
+  const data = await ghJson(`/repos/${OWNER}/${REPO}/actions/runs?head_sha=${sha}&per_page=20`);
+  const runs = data.workflow_runs || [];
+  return runs.find(r => r.name === 'ci' || r.path?.includes('ci.yml')) || runs[0] || null;
+}
+
+function fmtRun(run) {
+  if (!run) return null;
+  return { id: run.id, status: run.status, conclusion: run.conclusion,
+           html_url: run.html_url, run_number: run.run_number, created_at: run.created_at };
+}
+
+// ── Process a single PR → determine status + fetch test data ─────────────────
+
+async function processPR(prMeta, existingState) {
+  const run = await getLatestCIRun(prMeta.head.sha);
+
+  // Nothing changed for a completed run — preserve test data, update metadata only
+  if (existingState?.runId === run?.id && run?.status === 'completed' &&
+      existingState.status !== 'building') {
+    return { ...existingState, ...prBase(prMeta) };
+  }
+
+  const base = { ...prBase(prMeta), runId: run?.id || null, run: fmtRun(run) };
+
+  if (!run || run.status === 'queued') {
+    return { ...base, status: 'pending' };
+  }
+
+  const [{ artifacts = [] }, { jobs = [] }] = await Promise.all([
+    ghJson(`/repos/${OWNER}/${REPO}/actions/runs/${run.id}/artifacts?per_page=100`),
+    ghJson(`/repos/${OWNER}/${REPO}/actions/runs/${run.id}/jobs?per_page=100`),
+  ]);
+
+  const testArtifacts  = artifacts.filter(a => /^(unit|integration|acceptance|property|reference)-reports-/.test(a.name));
+  const expiredCount   = testArtifacts.filter(a => a.expired).length;
+  const downloadable   = testArtifacts.filter(a => !a.expired);
+  const failedJobs     = jobs.filter(j => j.conclusion === 'failure').map(j => j.name);
+  const skippedTests   = jobs.filter(j => j.conclusion === 'skipped' && /unit|integration|acceptance|property|reference/i.test(j.name)).map(j => j.name);
+  const inProgressJobs = jobs.filter(j => j.status === 'in_progress').map(j => j.name);
+
+  // Build in progress
+  if (run.status === 'in_progress') {
+    // Download whatever test artifacts are already available
+    const partial = downloadable.length > 0
+      ? await Promise.all(downloadable.map(a => downloadAndParseArtifact(a.id, a.name)))
+      : [];
+    return { ...base, status: 'building', inProgressJobs, artifacts: partial,
+             jobs: { failed: failedJobs, skippedTests } };
+  }
+
+  // Build failed — check if tests actually ran (summaries tell us even without artifacts)
+  const nonTestFailed = failedJobs.filter(n => !/Report|Result/i.test(n));
+  if (testArtifacts.length === 0 && nonTestFailed.length > 0) {
+    const checkRunSuites = await fetchCheckRunSummaries(prMeta.head.sha);
+    return { ...base, status: 'build_failed', checkRunSuites,
+             jobs: { failed: failedJobs, failedNonTest: nonTestFailed, skippedTests } };
+  }
+
+  // All artifacts expired — try check-run summaries
+  if (expiredCount > 0 && downloadable.length === 0) {
+    const checkRunSuites = await fetchCheckRunSummaries(prMeta.head.sha);
+    const hasFails = checkRunSuites.some(s => s.testcases.some(tc => tc.status === 'failed'));
+    return { ...base, status: hasFails ? 'failing' : 'passing',
+             expiredArtifacts: expiredCount, checkRunSuites,
+             jobs: { failed: failedJobs, skippedTests } };
+  }
+
+  // No test artifacts and no build failure (e.g. tests were skipped)
+  if (testArtifacts.length === 0) {
+    return { ...base, status: 'pending', jobs: { failed: failedJobs, skippedTests } };
+  }
+
+  // Download and parse
+  const artifactResults = await Promise.all(
+    downloadable.map(a => downloadAndParseArtifact(a.id, a.name))
+  );
+  const allCases  = artifactResults.flatMap(a => a.suites.flatMap(s => s.testcases));
+  const hasFails  = allCases.some(tc => tc.status === 'failed' || tc.status === 'error');
+
+  // Tests passed but a non-test job failed (e.g. windowsBuild) → build_failed, not failing
+  const status = hasFails ? 'failing' : nonTestFailed.length > 0 ? 'build_failed' : 'passing';
+
+  return { ...base,
+    status,
+    artifacts: artifactResults,
+    expiredArtifacts: expiredCount,
+    jobs: { failed: failedJobs, failedNonTest: nonTestFailed, skippedTests },
+  };
+}
+
+function prBase(pr) {
+  return {
+    number:      pr.number,
+    title:       pr.title,
+    url:         pr.html_url,
+    author:      pr.user.login,
+    authorAvatar:pr.user.avatar_url,
+    branch:      pr.head.ref,
+    headSha:     pr.head.sha.slice(0, 7),
+    updatedAt:   pr.updated_at,
+    isDraft:     pr.draft,
+    labels:      pr.labels.map(l => ({ name: l.name, color: l.color })),
+    processedAt: new Date().toISOString(),
+  };
+}
+
+// ── Background refresh loop ──────────────────────────────────────────────────
+
+const prState = new Map();
+let lastRefresh   = null;
+let isRefreshing  = false;
+let initialized   = false;
+let refreshTimer  = null;
+
+async function refresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  console.log(`[${new Date().toISOString()}] Refreshing…`);
 
   try {
-    const [runData, { artifacts = [] }, { jobs = [] }] = await Promise.all([
-      ghJson(`/repos/${OWNER}/${REPO}/actions/runs/${runId}`, token),
-      ghJson(`/repos/${OWNER}/${REPO}/actions/runs/${runId}/artifacts?per_page=100`, token),
-      ghJson(`/repos/${OWNER}/${REPO}/actions/runs/${runId}/jobs?per_page=100`, token),
-    ]);
-
-    const testArtifacts = artifacts.filter((a) =>
-      /^(unit|integration|acceptance|property|reference)-reports-/.test(a.name)
-    );
-    const expiredCount = testArtifacts.filter((a) => a.expired).length;
-    const downloadableArtifacts = testArtifacts.filter((a) => !a.expired);
-
-    // Summarise job outcomes for the UI
-    const failedJobs = jobs.filter((j) => j.conclusion === 'failure').map((j) => j.name);
-    const skippedTestJobs = jobs.filter((j) =>
-      j.conclusion === 'skipped' && /unit|integration|acceptance|property|reference/i.test(j.name)
-    ).map((j) => j.name);
-
-    console.log(`Run ${runId}: ${downloadableArtifacts.length} downloadable, ${expiredCount} expired test artifacts…`);
-
-    const artifactResults = await Promise.all(
-      downloadableArtifacts.map((a) => downloadArtifact(a.id, a.name, token))
+    const prs = await ghJson(
+      `/repos/${OWNER}/${REPO}/pulls?state=open&per_page=50&sort=updated&direction=desc`
     );
 
-    // Fall back to check run summaries when all artifacts are expired
-    let checkRunSuites = [];
-    if (expiredCount > 0 && downloadableArtifacts.length === 0) {
-      console.log(`Run ${runId}: fetching check run summaries (artifacts expired)…`);
-      checkRunSuites = await fetchCheckRunSummaries(runData.head_sha, token);
-      console.log(`Run ${runId}: got ${checkRunSuites.length} check run summaries`);
+    // Process PRs sequentially to avoid rate-limit spikes
+    for (const pr of prs) {
+      try {
+        const existing = prState.get(pr.number);
+        const result   = await processPR(pr, existing);
+        prState.set(pr.number, result);
+      } catch (e) {
+        console.error(`PR #${pr.number} error: ${e.message}`);
+        // Keep existing state on error
+      }
     }
 
-    const result = {
-      run: {
-        id: runData.id,
-        name: runData.name,
-        status: runData.status,
-        conclusion: runData.conclusion,
-        created_at: runData.created_at,
-        head_branch: runData.head_branch,
-        head_sha: runData.head_sha?.slice(0, 7),
-        html_url: runData.html_url,
-        actor: runData.actor?.login,
-        run_number: runData.run_number,
-      },
-      jobs: { failed: failedJobs, skippedTests: skippedTestJobs },
-      expiredArtifacts: expiredCount,
-      artifacts: artifactResults,
-      checkRunSuites,
-    };
+    // Remove PRs that are no longer open
+    const live = new Set(prs.map(p => p.number));
+    for (const [num] of prState) if (!live.has(num)) prState.delete(num);
 
-    if (runData.status === 'completed') cache.set(cacheKey, result);
-    res.json(result);
+    lastRefresh = new Date();
+    initialized = true;
+    console.log(`[${new Date().toISOString()}] Done. ${prState.size} PRs.`);
   } catch (e) {
-    console.error(e);
-    res.status(e.status || 500).json({ error: e.message });
+    console.error('Refresh error:', e.message);
+  } finally {
+    isRefreshing = false;
+    scheduleNext();
   }
+}
+
+function scheduleNext() {
+  clearTimeout(refreshTimer);
+  const anyBuilding = [...prState.values()].some(p => p.status === 'building');
+  refreshTimer = setTimeout(refresh, anyBuilding ? FAST_INTERVAL : SLOW_INTERVAL);
+}
+
+// ── Express routes ───────────────────────────────────────────────────────────
+
+const app = express();
+app.use(express.static('public'));
+
+app.get('/api/state', (req, res) => {
+  const prs = [...prState.values()]
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  res.json({ prs, lastRefresh: lastRefresh?.toISOString() || null, refreshing: isRefreshing, initialized });
 });
 
-// Catch-all: return JSON 404 instead of Express's default HTML error page
+// Trigger a manual refresh
+app.post('/api/refresh', (req, res) => {
+  res.json({ ok: true });
+  refresh();
+});
+
 app.use('/api', (req, res) => res.status(404).json({ error: `No route: ${req.method} ${req.path}` }));
 
-app.listen(PORT, () => console.log(`Teku CI → http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Teku CI → http://localhost:${PORT}`);
+  refresh(); // kick off immediately
+});

@@ -1,14 +1,21 @@
 {
   "name": "teku-ci",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev:node": "node --watch server.js"
   },
   "dependencies": {
+    "fast-xml-parser": "^4.3.2",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
     "adm-zip": "^0.5.10",
     "express": "^4.18.2",
-    "fast-xml-parser": "^4.3.2"
+    "wrangler": "^4.81.1"
   }
 }

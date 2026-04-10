@@ -1,0 +1,15 @@
+name            = "teku-ci"
+main            = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./public"
+binding   = "ASSETS"
+
+[[kv_namespaces]]
+binding    = "CI_STATE"
+id         = "e7ac90de2e604bfc95e44574bd87bba4"
+preview_id = "e0aa8af8c139457498a85942d4384362"
+
+[triggers]
+crons = ["* * * * *"]

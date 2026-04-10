@@ -35,7 +35,7 @@ header {
   height: 54px;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -45,38 +45,121 @@ header {
 .logo-text { font-size: 15px; font-weight: 700; }
 .logo-text em { color: var(--accent); font-style: normal; }
 
-.run-form { display: flex; align-items: center; gap: 8px; flex: 1; max-width: 520px; }
-.run-form label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.header-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; font-size: 12px; color: var(--muted); }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+.spinner.lg { width: 32px; height: 32px; border-width: 3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-input {
-  background: var(--bg);
+.refresh-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: var(--r);
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.refresh-btn:hover { color: var(--text); border-color: var(--muted); }
+.refresh-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── Filter bar ── */
+#filter-bar {
+  padding: 10px 24px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.tab { background: none; border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; }
+.tab:hover:not(.active) { border-color: var(--muted); color: var(--text); }
+.tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+/* ── PR List ── */
+#pr-list { padding: 16px 24px 40px; max-width: 900px; }
+
+.pr-card {
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r);
-  color: var(--text);
-  padding: 6px 10px;
-  font-size: 13px;
-  outline: none;
-  transition: border-color .15s;
-}
-input:focus { border-color: var(--accent); }
-input::placeholder { color: var(--muted); }
-.run-input { width: 140px; font-family: var(--mono); }
-.token-input { width: 190px; font-family: var(--mono); }
-
-button.load-btn {
-  background: var(--accent);
-  color: #0d1117;
-  border: none;
-  border-radius: var(--r);
-  padding: 6px 16px;
-  font-size: 13px;
-  font-weight: 700;
+  padding: 14px 16px;
+  margin-bottom: 10px;
   cursor: pointer;
-  transition: opacity .15s;
-  white-space: nowrap;
+  transition: border-color .15s;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 12px;
+  align-items: start;
 }
-button.load-btn:hover { opacity: .85; }
-button.load-btn:disabled { opacity: .4; cursor: not-allowed; }
+.pr-card:hover { border-color: var(--accent); }
+.pr-card.status-failing  { border-left: 3px solid var(--error); }
+.pr-card.status-building { border-left: 3px solid var(--blue); }
+.pr-card.status-passing  { border-left: 3px solid var(--success); }
+.pr-card.status-build_failed { border-left: 3px solid var(--warning); }
+.pr-card.status-pending  { border-left: 3px solid var(--skipped); }
+
+.pr-avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+.pr-main { min-width: 0; }
+.pr-title-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.pr-num { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.pr-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-meta { font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.pr-meta code { font-family: var(--mono); font-size: 11px; }
+.pr-meta a { color: var(--blue); text-decoration: none; }
+.pr-meta a:hover { text-decoration: underline; }
+.pr-counts { font-size: 12px; margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
+.pc-fail { color: var(--error); font-weight: 600; }
+.pc-pass { color: var(--success); }
+.pc-skip { color: var(--skipped); }
+.pc-total { color: var(--muted); }
+
+.pr-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.badge.failing     { background: rgba(248,81,73,.15); color: var(--error); }
+.badge.passing     { background: rgba(63,185,80,.15); color: var(--success); }
+.badge.building    { background: rgba(88,166,255,.1); color: var(--blue); }
+.badge.build_failed{ background: rgba(227,179,65,.1); color: var(--warning); }
+.badge.pending     { background: var(--surface-2); color: var(--muted); }
+.badge.draft       { background: var(--surface-2); color: var(--muted); font-weight: 400; }
+.pr-run-link { font-size: 11px; color: var(--blue); text-decoration: none; }
+.pr-run-link:hover { text-decoration: underline; }
+
+.pr-label { display: inline-flex; padding: 1px 7px; border-radius: 20px; font-size: 11px; border: 1px solid; }
+
+.in-progress-jobs { margin-top: 4px; font-size: 11px; color: var(--blue); }
+
+/* ── Init / empty states ── */
+#init-screen { display: flex; flex-direction: column; align-items: center; padding: 80px 24px; gap: 14px; color: var(--muted); }
+#empty-list { display: none; text-align: center; padding: 60px 24px; color: var(--muted); }
+
+/* ── Detail view ── */
+#detail-view { display: none; }
+
+.back-bar {
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 54px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.back-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: var(--r);
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.back-btn:hover { color: var(--text); border-color: var(--muted); }
+.back-pr-title { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Run info bar ── */
 #run-bar {
@@ -94,11 +177,6 @@ button.load-btn:disabled { opacity: .4; cursor: not-allowed; }
 .run-meta code { font-family: var(--mono); font-size: 12px; }
 .run-meta a { color: var(--blue); text-decoration: none; }
 .run-meta a:hover { text-decoration: underline; }
-.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-.badge.success { background: rgba(63,185,80,.15); color: var(--success); }
-.badge.failure { background: rgba(248,81,73,.15); color: var(--error); }
-.badge.progress { background: rgba(88,166,255,.1); color: var(--blue); }
-.badge.neutral  { background: var(--surface-2); color: var(--muted); }
 
 /* ── Stats ── */
 #stats-bar { display: none; padding: 14px 24px; gap: 10px; flex-wrap: wrap; }
@@ -112,17 +190,14 @@ button.load-btn:disabled { opacity: .4; cursor: not-allowed; }
 /* ── Toolbar ── */
 #toolbar { display: none; padding: 10px 24px; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .tabs { display: flex; gap: 4px; }
-.tab { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 13px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; }
-.tab:hover:not(.active) { border-color: var(--muted); color: var(--text); }
-.tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
-.search { flex: 1; max-width: 300px; }
+.search { flex: 1; max-width: 300px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r); color: var(--text); padding: 6px 10px; font-size: 13px; outline: none; }
+.search:focus { border-color: var(--accent); }
+.search::placeholder { color: var(--muted); }
 #expand-all { background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; border-radius: var(--r); font-size: 12px; cursor: pointer; margin-left: auto; }
 #expand-all:hover { color: var(--text); }
 
-/* ── Loader / error ── */
-#loader { display: none; flex-direction: column; align-items: center; padding: 80px 24px; gap: 14px; color: var(--muted); }
-.spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* ── Detail loader ── */
+#detail-loader { display: none; flex-direction: column; align-items: center; padding: 80px 24px; gap: 14px; color: var(--muted); }
 #error-box { display: none; margin: 24px; padding: 14px 16px; background: rgba(248,81,73,.08); border: 1px solid rgba(248,81,73,.25); border-radius: var(--r); color: var(--error); font-size: 13px; }
 
 /* ── Results ── */
@@ -196,156 +271,490 @@ main { padding: 16px 24px 40px; }
     <div class="logo-mark">T</div>
     <span class="logo-text">Teku <em>CI</em></span>
   </div>
-  <form class="run-form" id="form">
-    <label for="run-id">Run #</label>
-    <input id="run-id" class="run-input" type="text" placeholder="24181827923" autocomplete="off" spellcheck="false">
-    <label for="token">Token</label>
-    <input id="token" class="token-input" type="password" placeholder="ghp_…">
-    <button class="load-btn" type="submit" id="load-btn">Load</button>
-  </form>
+  <div class="header-meta">
+    <span id="refresh-text">Initializing...</span>
+    <div id="refresh-spinner" class="spinner" style="display:none"></div>
+    <button class="refresh-btn" id="refresh-btn" onclick="triggerRefresh()">Refresh</button>
+  </div>
 </header>
 
-<div id="run-bar"></div>
-<div id="stats-bar" style="display:none;flex-wrap:wrap;"></div>
-<div id="toolbar" style="display:none;"></div>
-<div id="loader"><div class="spinner"></div><span>Downloading test reports…</span></div>
-<div id="error-box"></div>
-<main id="results"></main>
+<!-- List view -->
+<div id="list-view">
+  <div id="filter-bar"></div>
+  <div id="init-screen"><div class="spinner lg"></div><span>Loading PR data...</span></div>
+  <div id="empty-list">No open PRs found.</div>
+  <div id="pr-list"></div>
+</div>
+
+<!-- Detail view -->
+<div id="detail-view">
+  <div class="back-bar">
+    <button class="back-btn" onclick="showList()">&#8592; PRs</button>
+    <span class="back-pr-title" id="detail-back-title"></span>
+  </div>
+  <div id="run-bar"></div>
+  <div id="stats-bar" style="display:none;flex-wrap:wrap;"></div>
+  <div id="toolbar" style="display:none;"></div>
+  <div id="detail-loader" style="display:none;flex-direction:column;align-items:center;padding:80px 24px;gap:14px;color:var(--muted);">
+    <div class="spinner lg"></div><span>Loading test results...</span>
+  </div>
+  <div id="error-box"></div>
+  <main id="results"></main>
+</div>
 
 <script>
-let data = null;
+let state = null;
+let selectedPR = null;
+let listFilter = 'all';
 let testFilter = 'failed';
 let search = '';
+let pollTimer = null;
 
 const $ = id => document.getElementById(id);
 
-// Persist token
-const tokenEl = $('token');
-tokenEl.value = localStorage.getItem('teku-token') || '';
-tokenEl.addEventListener('change', () => localStorage.setItem('teku-token', tokenEl.value));
+// ── Polling ─────────────────────────────────────────────────────────────────
 
-// Restore last run id
-const runEl = $('run-id');
-runEl.value = localStorage.getItem('teku-run') || '';
-
-$('form').addEventListener('submit', async e => {
-  e.preventDefault();
-  const runId = runEl.value.trim().replace(/\D/g, '');
-  if (!runId) return;
-  localStorage.setItem('teku-run', runId);
-  await load(runId);
-});
-
-// Auto-load only from explicit URL hash (e.g. bookmarked link)
-const hashRun = location.hash.match(/^#(\d+)$/)?.[1];
-if (hashRun) { runEl.value = hashRun; load(hashRun); }
-
-async function load(runId) {
-  reset();
-  $('loader').style.display = 'flex';
-  $('load-btn').disabled = true;
-
-  const qs = new URLSearchParams();
-  if (tokenEl.value.trim()) qs.set('token', tokenEl.value.trim());
-
+async function fetchState() {
   try {
-    const res = await fetch(`/api/run/${runId}?${qs}`);
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
-    data = json;
-    history.replaceState(null, '', `#${runId}`);
-    render();
-  } catch (err) {
-    showError(err.message);
-  } finally {
-    $('loader').style.display = 'none';
-    $('load-btn').disabled = false;
+    const res = await fetch('/api/state');
+    if (!res.ok) return;
+    state = await res.json();
+    onStateUpdate();
+  } catch (e) {
+    console.error('Poll error:', e.message);
+  }
+  schedulePoll();
+}
+
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(fetchState, 30_000);
+}
+
+function onStateUpdate() {
+  updateHeader();
+  if (selectedPR !== null) {
+    const fresh = state.prs.find(p => p.number === selectedPR);
+    if (fresh) renderDetail(fresh);
+    else showList(); // PR was closed
+  } else {
+    renderList();
   }
 }
 
-function render() {
-  const { run, artifacts, checkRunSuites = [] } = data;
+async function triggerRefresh() {
+  $('refresh-btn').disabled = true;
+  try { await fetch('/api/refresh', { method: 'POST' }); } catch {}
+  // Poll quickly to pick up the refreshing:true state
+  clearTimeout(pollTimer);
+  setTimeout(fetchState, 1000);
+}
 
-  // Run bar
-  const rb = $('run-bar');
-  rb.style.display = 'flex';
-  const conc = run.conclusion || run.status;
-  const bcls = conc === 'success' ? 'success' : conc === 'failure' ? 'failure' : conc === 'in_progress' ? 'progress' : 'neutral';
-  rb.innerHTML = `
-    <span class="run-name">${esc(run.name)} #${run.run_number}</span>
-    <span class="badge ${bcls}">${conc?.replace(/_/g,' ') || '—'}</span>
-    <div class="run-meta">
-      <span>branch: <code>${esc(run.head_branch)}</code></span>
-      <span>commit: <code>${esc(run.head_sha)}</code></span>
-      ${run.actor ? `<span>by ${esc(run.actor)}</span>` : ''}
-      <a href="${esc(run.html_url)}" target="_blank">GitHub ↗</a>
+// ── Header ──────────────────────────────────────────────────────────────────
+
+function updateHeader() {
+  const spinner = $('refresh-spinner');
+  const text = $('refresh-text');
+  const btn = $('refresh-btn');
+
+  spinner.style.display = state.refreshing ? 'block' : 'none';
+  btn.disabled = state.refreshing;
+
+  if (!state.initialized) {
+    text.textContent = 'Initializing...';
+    return;
+  }
+
+  const passing = state.prs.filter(p => p.status === 'passing').length;
+  const count = state.prs.length - passing;
+  const building = state.prs.filter(p => p.status === 'building').length;
+  const failing = state.prs.filter(p => p.status === 'failing').length;
+
+  let summary = `${count} active PR${count !== 1 ? 's' : ''}`;
+  if (passing) summary += ` · ${passing} passing`;
+  if (failing) summary += ` · ${failing} failing`;
+  if (building) summary += ` · ${building} building`;
+  if (state.lastRefresh) summary += ` · ${timeAgo(state.lastRefresh)}`;
+  text.textContent = summary;
+}
+
+// ── List view ────────────────────────────────────────────────────────────────
+
+function showList() {
+  selectedPR = null;
+  $('detail-view').style.display = 'none';
+  $('list-view').style.display = 'block';
+  renderList();
+}
+
+function renderList() {
+  if (!state || !state.initialized) {
+    $('init-screen').style.display = 'flex';
+    $('empty-list').style.display = 'none';
+    $('pr-list').innerHTML = '';
+    $('filter-bar').innerHTML = '';
+    return;
+  }
+  $('init-screen').style.display = 'none';
+
+  const prs = state.prs;
+
+  // Count by status for filter tabs
+  const counts = { failing: 0, building: 0, build_failed: 0, pending: 0, passing: 0 };
+  for (const p of prs) if (counts[p.status] !== undefined) counts[p.status]++;
+  const activeCount = prs.filter(p => p.status !== 'passing').length;
+
+  // Filter bar — "All" means non-passing; "Passing" tab shown only if there are passing PRs
+  const filterDefs = [
+    { key: 'all',          label: 'All',         count: activeCount },
+    { key: 'failing',      label: 'Failing',     count: counts.failing },
+    { key: 'building',     label: 'Building',    count: counts.building },
+    { key: 'build_failed', label: 'Build Failed',count: counts.build_failed },
+    { key: 'pending',      label: 'Pending',     count: counts.pending },
+    { key: 'passing',      label: 'Passing',     count: counts.passing },
+  ];
+  $('filter-bar').innerHTML = filterDefs
+    .filter(f => f.key === 'all' || f.count > 0)
+    .map(f => `<button class="tab${listFilter === f.key ? ' active' : ''}" data-f="${f.key}">${f.label} <span style="opacity:.6">${f.count}</span></button>`)
+    .join('');
+  $('filter-bar').querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    listFilter = t.dataset.f;
+    renderList();
+  }));
+
+  // Filter PRs — "all" hides passing PRs; other tabs filter by status
+  const filtered = listFilter === 'all'
+    ? prs.filter(p => p.status !== 'passing')
+    : prs.filter(p => p.status === listFilter);
+
+  if (filtered.length === 0) {
+    $('empty-list').style.display = 'block';
+    $('empty-list').textContent = prs.length === 0 ? 'No open PRs found.' : 'No PRs match this filter.';
+    $('pr-list').innerHTML = '';
+    return;
+  }
+  $('empty-list').style.display = 'none';
+
+  const list = $('pr-list');
+  list.innerHTML = '';
+  for (const pr of filtered) list.appendChild(buildPRCard(pr));
+}
+
+function buildPRCard(pr) {
+  const stats = getPRStats(pr);
+  const card = document.createElement('div');
+  card.className = `pr-card status-${pr.status}`;
+  if (pr.status !== 'passing') {
+    card.addEventListener('click', () => selectPR(pr.number));
+  } else {
+    card.style.cursor = 'default';
+  }
+
+  const statusLabels = { failing: 'Failing', passing: 'Passing', building: 'Building', build_failed: 'Build Failed', pending: 'Pending' };
+  const badgeLabel = statusLabels[pr.status] || pr.status;
+
+  let countsHtml = '';
+  if (stats.total > 0) {
+    countsHtml = `<div class="pr-counts">` +
+      (stats.fail ? `<span class="pc-fail">&#x2715; ${stats.fail} failed</span>` : '') +
+      (stats.pass ? `<span class="pc-pass">&#x2713; ${stats.pass} passed</span>` : '') +
+      (stats.skip ? `<span class="pc-skip">${stats.skip} skipped</span>` : '') +
+      `<span class="pc-total">${stats.total} total</span>` +
+      `</div>`;
+  }
+
+  if (pr.status === 'building' && pr.inProgressJobs?.length) {
+    countsHtml += `<div class="in-progress-jobs">Running: ${pr.inProgressJobs.slice(0, 3).map(esc).join(', ')}${pr.inProgressJobs.length > 3 ? ` +${pr.inProgressJobs.length - 3} more` : ''}</div>`;
+  }
+
+  if (pr.status === 'build_failed' && pr.jobs?.failedNonTest?.length) {
+    const label = pr.checkRunSuites?.length > 0 ? 'Job failed (tests ran):' : 'Failed (no tests ran):';
+    countsHtml += `<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">` +
+      `<span style="font-size:11px;color:var(--muted)">${label}</span>` +
+      pr.jobs.failedNonTest.map(n => `<span style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--error);padding:1px 8px;border-radius:4px;font-family:var(--mono);font-size:11px">${esc(n)}</span>`).join('') +
+      `</div>`;
+  }
+
+  const labelsHtml = pr.labels?.length
+    ? pr.labels.map(l => {
+        const c = l.color ? `#${l.color}` : '#555';
+        return `<span class="pr-label" style="color:${c};border-color:${c}33;background:${c}18">${esc(l.name)}</span>`;
+      }).join('')
+    : '';
+
+  const runLink = pr.run?.html_url
+    ? `<a class="pr-run-link" href="${esc(pr.run.html_url)}" target="_blank" onclick="event.stopPropagation()">Run #${pr.run.run_number} &#8599;</a>`
+    : '';
+
+  card.innerHTML = `
+    <img class="pr-avatar" src="${esc(pr.authorAvatar)}" alt="${esc(pr.author)}" onerror="this.style.display='none'">
+    <div class="pr-main">
+      <div class="pr-title-row">
+        <span class="pr-num">#${pr.number}</span>
+        <span class="pr-title">${esc(pr.title)}</span>
+        ${pr.isDraft ? '<span class="badge draft">Draft</span>' : ''}
+        ${labelsHtml}
+      </div>
+      <div class="pr-meta">
+        <span>by ${esc(pr.author)}</span>
+        <code>${esc(pr.branch)}</code>
+        <code>${esc(pr.headSha.slice(0,7))}</code>
+        <span>${timeAgo(pr.updatedAt)}</span>
+        ${runLink}
+      </div>
+      ${countsHtml}
+    </div>
+    <div class="pr-side">
+      <span class="badge ${pr.status}">${badgeLabel}</span>
     </div>`;
 
-  // Stats
-  let total = 0, fail = 0, err = 0, skip = 0, pass = 0;
-  const allSuiteSources = [...artifacts, ...checkRunSuites.map(s => ({ suites: [s] }))];
-  for (const { suites } of allSuiteSources)
-    for (const s of suites)
-      for (const tc of s.testcases) {
+  return card;
+}
+
+function getPRStats(pr) {
+  let total = 0, fail = 0, pass = 0, skip = 0;
+  function addSuite(suite) {
+    if (suite.total !== undefined) {
+      // Compact format: only failed/skipped in testcases; counts stored on suite
+      fail  += (suite.testcases || []).filter(tc => tc.status === 'failed' || tc.status === 'error').length;
+      total += suite.total;
+      pass  += suite.passed  || 0;
+      skip  += suite.skipped || 0;
+    } else {
+      for (const tc of (suite.testcases || [])) {
         total++;
-        if (tc.status === 'failed') fail++;
-        else if (tc.status === 'error') err++;
+        if (tc.status === 'failed' || tc.status === 'error') fail++;
         else if (tc.status === 'skipped') skip++;
         else pass++;
       }
+    }
+  }
+  for (const art of (pr.artifacts || []))
+    for (const suite of (art.suites || []))
+      addSuite(suite);
+  for (const suite of (pr.checkRunSuites || []))
+    addSuite(suite);
+  return { total, fail, pass, skip };
+}
+
+// ── Detail view ──────────────────────────────────────────────────────────────
+
+function selectPR(number) {
+  selectedPR = number;
+  const pr = state.prs.find(p => p.number === number);
+  if (!pr) return;
+  $('list-view').style.display = 'none';
+  $('detail-view').style.display = 'block';
+  renderDetail(pr);
+}
+
+function renderDetail(pr) {
+  $('detail-back-title').textContent = `#${pr.number} ${pr.title}`;
+
+  testFilter = 'failed';
+  search = '';
+
+  const rb = $('run-bar');
+
+  if (pr.status === 'pending') {
+    rb.style.display = 'none';
+    $('stats-bar').style.display = 'none';
+    $('toolbar').style.display = 'none';
+    $('error-box').style.display = 'none';
+    $('results').innerHTML = `
+      <div style="max-width:520px;margin:40px auto;text-align:center;">
+        <div style="font-size:36px;margin-bottom:12px">&#x23F3;</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Waiting for CI</div>
+        <div style="color:var(--muted);font-size:13px">No CI run has started for this PR yet.</div>
+      </div>`;
+    return;
+  }
+
+  // Run bar
+  rb.style.display = 'flex';
+  const statusLabels = { failing: 'Tests Failing', passing: 'Tests Passing', building: 'Building', build_failed: 'Build Failed', pending: 'Pending' };
+  const badgeCls = { failing: 'failing', passing: 'passing', building: 'building', build_failed: 'build_failed', pending: 'pending' };
+  rb.innerHTML = `
+    <span class="run-name">#${pr.number} ${esc(pr.title)}</span>
+    <span class="badge ${badgeCls[pr.status] || 'pending'}">${statusLabels[pr.status] || pr.status}</span>
+    <div class="run-meta">
+      <span>branch: <code>${esc(pr.branch)}</code></span>
+      <span>commit: <code>${esc(pr.headSha.slice(0,7))}</code></span>
+      <span>by ${esc(pr.author)}</span>
+      ${pr.run?.html_url ? `<a href="${esc(pr.run.html_url)}" target="_blank">CI Run #${pr.run.run_number} &#8599;</a>` : ''}
+      <a href="${esc(pr.url)}" target="_blank">PR on GitHub &#8599;</a>
+    </div>`;
+
+  if (pr.status === 'build_failed') {
+    const nonTest = pr.jobs?.failedNonTest || pr.jobs?.failed || [];
+    const hasTests = pr.checkRunSuites?.length > 0 || pr.artifacts?.some(a => a.suites?.length > 0);
+
+    if (hasTests) {
+      // Non-test job failed but tests ran — show a warning banner then test results
+      $('error-box').style.display = 'block';
+      $('error-box').style.cssText += ';background:rgba(227,179,65,.08);border-color:rgba(227,179,65,.25);color:var(--warning);';
+      $('error-box').innerHTML = `Build job failed${nonTest.length ? ` (<strong>${nonTest.map(esc).join(', ')}</strong>)` : ''} but tests ran — results below.` +
+        (pr.run?.html_url ? ` <a href="${esc(pr.run.html_url)}" target="_blank" style="color:var(--blue)">CI run &#8599;</a>` : '');
+      renderTestResults({ artifacts: pr.artifacts || [], checkRunSuites: pr.checkRunSuites || [],
+                          expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {} });
+      return;
+    }
+
+    // No test data — tests never ran
+    $('stats-bar').style.display = 'none';
+    $('toolbar').style.display = 'none';
+    $('error-box').style.display = 'none';
+    $('results').innerHTML = `
+      <div style="max-width:560px;margin:40px auto;text-align:center;">
+        <div style="font-size:36px;margin-bottom:12px">&#x1F3D7;&#xFE0F;</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Build failed — tests did not run</div>
+        <div style="color:var(--muted);font-size:13px;margin-bottom:16px">The following job(s) failed before tests could execute.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:20px">
+          ${nonTest.map(n => `<span style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--error);padding:3px 10px;border-radius:4px;font-family:var(--mono);font-size:12px">${esc(n)}</span>`).join('')}
+        </div>
+        ${pr.run?.html_url ? `<a href="${esc(pr.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub &#8599;</a>` : ''}
+      </div>`;
+    return;
+  }
+
+  if (pr.status === 'building') {
+    const partial = pr.artifacts || [];
+    const hasPartial = partial.some(a => a.suites?.length > 0);
+    if (!hasPartial) {
+      $('stats-bar').style.display = 'none';
+      $('toolbar').style.display = 'none';
+      $('error-box').style.display = 'none';
+      const running = pr.inProgressJobs || [];
+      $('results').innerHTML = `
+        <div style="max-width:520px;margin:40px auto;text-align:center;">
+          <div style="font-size:36px;margin-bottom:12px">&#x23F3;</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:8px">Build in progress</div>
+          <div style="color:var(--muted);font-size:13px;margin-bottom:12px">Test artifacts are not available yet.</div>
+          ${running.length ? `<div style="color:var(--blue);font-size:12px">Running: ${running.map(esc).join(', ')}</div>` : ''}
+        </div>`;
+      return;
+    }
+  }
+
+  // Render immediately if data is already in state (Node.js path: pr.artifacts,
+  // or Cloudflare expired-artifacts path: pr.checkRunSuites)
+  const hasLocalData = pr.checkRunSuites?.length > 0 ||
+                       pr.artifacts?.some(a => a.suites?.length > 0);
+  if (hasLocalData) {
+    renderTestResults({ artifacts: pr.artifacts || [], checkRunSuites: pr.checkRunSuites || [],
+                        expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {} });
+    return;
+  }
+
+  // No local data — fetch on-demand via /api/pr/:number (Cloudflare Worker path)
+  $('stats-bar').style.display = 'none';
+  $('toolbar').style.display = 'none';
+  $('error-box').style.display = 'none';
+  $('results').innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;padding:60px 24px;gap:14px;color:var(--muted)">
+      <div class="spinner lg"></div><span>Loading test results…</span>
+    </div>`;
+  loadPRTests(pr);
+}
+
+// ── On-demand test loading ───────────────────────────────────────────────────
+
+async function loadPRTests(pr) {
+  try {
+    const res = await fetch(`/api/pr/${pr.number}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const testData = await res.json();
+    if (testData.error) throw new Error(testData.error);
+    if (selectedPR !== pr.number) return; // navigated away while fetching
+    renderTestResults({ artifacts: testData.artifacts || [], checkRunSuites: testData.checkRunSuites || [],
+                        expiredArtifacts: testData.expiredArtifacts || 0, jobs: pr.jobs || {} });
+  } catch (e) {
+    if (selectedPR !== pr.number) return;
+    $('results').innerHTML = `<div class="empty" style="color:var(--error)">Failed to load test results: ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Test results rendering ───────────────────────────────────────────────────
+
+function renderTestResults(detailData) {
+  let total = 0, fail = 0, skip = 0, pass = 0;
+  function addSuiteStats(s) {
+    if (s.total !== undefined) {
+      fail  += (s.testcases || []).filter(tc => tc.status === 'failed' || tc.status === 'error').length;
+      total += s.total;
+      pass  += s.passed  || 0;
+      skip  += s.skipped || 0;
+    } else {
+      for (const tc of (s.testcases || [])) {
+        total++;
+        if (tc.status === 'failed' || tc.status === 'error') fail++;
+        else if (tc.status === 'skipped') skip++;
+        else pass++;
+      }
+    }
+  }
+  for (const art of detailData.artifacts)
+    for (const s of (art.suites || []))
+      addSuiteStats(s);
+  for (const suite of (detailData.checkRunSuites || []))
+    addSuiteStats(suite);
 
   const sb = $('stats-bar');
   sb.style.display = 'flex';
   sb.innerHTML = `
-    <div class="stat s-fail"><div class="n">${fail + err}</div><div class="l">Failures</div></div>
+    <div class="stat s-fail"><div class="n">${fail}</div><div class="l">Failures</div></div>
     <div class="stat s-pass"><div class="n">${pass}</div><div class="l">Passed</div></div>
     <div class="stat s-skip"><div class="n">${skip}</div><div class="l">Skipped</div></div>
     <div class="stat"><div class="n">${total}</div><div class="l">Total</div></div>`;
 
-  // Toolbar
   const tb = $('toolbar');
   tb.style.display = 'flex';
   tb.innerHTML = `
     <div class="tabs">
-      <button class="tab active" data-f="failed">Failed (${fail + err})</button>
-      <button class="tab" data-f="all">All</button>
-      <button class="tab" data-f="skipped">Skipped</button>
+      <button class="tab ${testFilter==='failed'?'active':''}" data-f="failed">Failed (${fail})</button>
+      <button class="tab ${testFilter==='all'?'active':''}" data-f="all">All</button>
+      <button class="tab ${testFilter==='skipped'?'active':''}" data-f="skipped">Skipped</button>
     </div>
-    <input type="text" class="search" placeholder="Search tests…" id="search-box">
+    <input type="text" class="search" placeholder="Search tests..." id="search-box" value="${esc(search)}">
     <button id="expand-all">Expand all failures</button>`;
 
   tb.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
     tb.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     testFilter = t.dataset.f;
-    renderResults();
+    renderResultsInner(detailData);
   }));
-  $('search-box').addEventListener('input', e => { search = e.target.value; renderResults(); });
+  $('search-box').addEventListener('input', e => { search = e.target.value; renderResultsInner(detailData); });
   $('expand-all').addEventListener('click', expandAll);
 
-  renderResults();
+  $('error-box').style.display = 'none';
+
+  if (detailData.expiredArtifacts > 0 && detailData.checkRunSuites?.length > 0) {
+    $('error-box').style.display = 'block';
+    $('error-box').style.cssText += ';background:rgba(227,179,65,.08);border-color:rgba(227,179,65,.25);color:var(--warning);';
+    $('error-box').innerHTML = 'Artifacts expired — results loaded from GitHub check run summaries. Stack traces may be limited.';
+  }
+
+  renderResultsInner(detailData);
 }
 
-function renderResults() {
+function renderResultsInner(detailData) {
   const container = $('results');
   container.innerHTML = '';
 
-  // Merge regular artifacts and check run suites into the same group structure
   const groups = {};
-  for (const art of data.artifacts) {
-    const type = art.artifactName.match(/^(unit|integration|acceptance|property|reference)/)?.[1] || 'other';
+  for (const art of (detailData.artifacts || [])) {
+    const type = art.artifactName?.match(/^(unit|integration|acceptance|property|reference)/)?.[1] || 'other';
     (groups[type] = groups[type] || []).push(art);
   }
-  for (const suite of (data.checkRunSuites || [])) {
-    const type = suite.name.match(/^(unit|integration|acceptance|property|reference)/i)?.[1]?.toLowerCase() || 'other';
-    const fakeArt = { artifactName: suite.name, suites: [suite] };
-    (groups[type] = groups[type] || []).push(fakeArt);
+  for (const suite of (detailData.checkRunSuites || [])) {
+    const type = suite.name?.match(/^(unit|integration|acceptance|property|reference)/i)?.[1]?.toLowerCase() || 'other';
+    (groups[type] = groups[type] || []).push({ artifactName: suite.name, suites: [suite] });
   }
 
   const order = ['unit', 'integration', 'acceptance', 'property', 'reference', 'other'];
   const q = search.toLowerCase();
   let shown = 0;
-  const errors = data.artifacts.filter(a => a.error);
 
   for (const type of order) {
     if (!groups[type]) continue;
@@ -354,20 +763,25 @@ function renderResults() {
   }
 
   if (shown === 0) {
-    if (errors.some(a => a.error?.includes('401') || a.error?.includes('403'))) {
-      const box = document.createElement('div');
-      box.className = 'error-box';
-      box.style.display = 'block';
-      box.innerHTML = `<strong>Authentication required.</strong><br><br>GitHub requires a token to download artifacts even for public repos. Enter one in the Token field above.`;
-      container.appendChild(box);
-    } else if (data.expiredArtifacts > 0 && data.checkRunSuites?.length > 0) {
-      container.appendChild(buildExpiredBanner());
-    } else if (data.expiredArtifacts > 0 && data.artifacts.length === 0) {
-      container.appendChild(buildExpiredInfo());
-    } else if (data.artifacts.length === 0) {
-      container.appendChild(buildNoArtifactsInfo());
+    const crSuites = (detailData.checkRunSuites || []).filter(s => s.total > 0);
+    if (crSuites.length > 0 && testFilter === 'failed') {
+      // All tests passed — nothing to show under "Failed" filter
+      const totalPassed = crSuites.reduce((n, s) => n + (s.total || 0), 0);
+      container.innerHTML = `<div class="empty" style="color:var(--success)">All ${totalPassed} tests passed.<br><span style="color:var(--muted);font-size:12px">Switch to <strong>All</strong> to see suite breakdown.</span></div>`;
+    } else if (crSuites.length > 0) {
+      // "All" filter — show suite-level summary (no individual test entries available from check-run)
+      for (const suite of crSuites) {
+        const f = (suite.testcases || []).filter(tc => tc.status === 'failed' || tc.status === 'error').length;
+        const el = document.createElement('div');
+        el.style.cssText = 'padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:12px;';
+        el.innerHTML = `<span style="color:var(--muted)">${esc(suite.name)}</span>` +
+          `<span style="color:${f ? 'var(--error)' : 'var(--success)'}">` +
+          (f ? `&#x2715; ${f} failed / ` : '') +
+          `&#x2713; ${suite.total - f} passed</span>`;
+        container.appendChild(el);
+      }
     } else {
-      container.innerHTML = '<div class="empty">No tests match the current filter</div>';
+      container.innerHTML = '<div class="empty">No tests match the current filter.</div>';
     }
   }
 }
@@ -375,9 +789,13 @@ function renderResults() {
 function buildGroup(type, artifacts, q) {
   const suites = [];
   for (const art of artifacts)
-    for (const s of art.suites) {
-      const cases = filterCases(s.testcases, q);
-      if (cases.length) suites.push({ ...s, testcases: cases });
+    for (const s of (art.suites || [])) {
+      const cases = filterCases(s.testcases || [], q);
+      // Include suites with no matching testcases only on "all" filter when
+      // the suite has data (compact format: passing tests are counts not entries)
+      const summaryOnly = testFilter === 'all' && cases.length === 0 &&
+                          (s.total > 0 || s.passed > 0) && !q;
+      if (cases.length || summaryOnly) suites.push({ ...s, testcases: cases, summaryOnly });
     }
   if (!suites.length) return null;
 
@@ -385,7 +803,6 @@ function buildGroup(type, artifacts, q) {
 
   const total = suites.reduce((n, s) => n + s.testcases.length, 0);
   const f = suites.reduce((n, s) => n + fails(s.testcases), 0);
-
   const labels = { unit:'Unit Tests', integration:'Integration Tests', acceptance:'Acceptance Tests', property:'Property Tests', reference:'Reference Tests', other:'Other' };
 
   const wrap = document.createElement('div');
@@ -393,12 +810,11 @@ function buildGroup(type, artifacts, q) {
 
   const hdr = document.createElement('div');
   hdr.className = 'group-hdr';
-  hdr.innerHTML = `<span class="gchev">▼</span><span class="gtitle">${labels[type] || type}</span>
-    <div class="gpill">${f ? `<span class="gf">⚑ ${f} failed</span>` : ''}<span class="gt">${total} shown</span></div>`;
+  hdr.innerHTML = `<span class="gchev">&#x25BC;</span><span class="gtitle">${labels[type] || type}</span>
+    <div class="gpill">${f ? `<span class="gf">&#x2691; ${f} failed</span>` : ''}<span class="gt">${total} shown</span></div>`;
 
   const body = document.createElement('div');
   body.className = 'group-body';
-
   hdr.addEventListener('click', () => { hdr.classList.toggle('closed'); body.classList.toggle('closed'); });
 
   for (const s of suites) body.appendChild(buildSuite(s));
@@ -408,29 +824,49 @@ function buildGroup(type, artifacts, q) {
 }
 
 function buildSuite(suite) {
+  const el = document.createElement('div');
+  el.className = 'suite';
+
+  // Compact/summary-only suite (all tests passed, no individual entries stored)
+  if (suite.summaryOnly) {
+    const p  = suite.passed  || 0;
+    const sk = suite.skipped || 0;
+    const row = document.createElement('div');
+    row.className = 'suite-hdr';
+    row.style.cursor = 'default';
+    row.innerHTML = `<span class="sname" style="color:var(--muted)">${esc(suite.name)}</span>
+      <div class="scounts">
+        ${p  ? `<span class="sc-p">&#x2713; ${p} passed</span>` : ''}
+        ${sk ? `<span class="sc-t">${sk} skipped</span>` : ''}
+      </div>`;
+    el.appendChild(row);
+    return el;
+  }
+
   const f = fails(suite.testcases);
-  const p = suite.testcases.filter(t => t.status === 'passed').length;
+  // Use precomputed counts from compact format; fall back to counting testcases
+  const p  = suite.passed  !== undefined ? suite.passed  : suite.testcases.filter(t => t.status === 'passed').length;
+  const sk = suite.skipped !== undefined ? suite.skipped : suite.testcases.filter(t => t.status === 'skipped').length;
   const parts = suite.name.split('.');
   const short = parts.pop();
   const pkg = parts.length ? parts.join('.') + '.' : '';
 
-  const el = document.createElement('div');
-  el.className = 'suite';
-
   const hdr = document.createElement('div');
   hdr.className = 'suite-hdr';
-  hdr.innerHTML = `<span class="schev">▼</span>
+  hdr.innerHTML = `<span class="schev">&#x25BC;</span>
     <span class="sname"><span class="pkg">${esc(pkg)}</span>${esc(short)}</span>
     <div class="scounts">
-      ${f ? `<span class="sc-f">✕ ${f}</span>` : ''}
-      ${p ? `<span class="sc-p">✓ ${p}</span>` : ''}
+      ${f  ? `<span class="sc-f">&#x2715; ${f}</span>` : ''}
+      ${p  ? `<span class="sc-p">&#x2713; ${p}</span>` : ''}
+      ${sk ? `<span class="sc-t">${sk} skipped</span>` : ''}
       ${suite.time ? `<span class="sc-t">${suite.time.toFixed(2)}s</span>` : ''}
     </div>`;
 
   const cases = document.createElement('div');
   cases.className = 'suite-cases';
 
-  const sorted = [...suite.testcases].sort((a, b) => ({ failed:0, error:0, skipped:1, passed:2 }[a.status]??3) - ({ failed:0, error:0, skipped:1, passed:2 }[b.status]??3));
+  const sorted = [...suite.testcases].sort((a, b) =>
+    ({failed:0,error:0,skipped:1,passed:2}[a.status]??3) - ({failed:0,error:0,skipped:1,passed:2}[b.status]??3));
   for (const tc of sorted) cases.appendChild(buildTC(tc));
 
   hdr.addEventListener('click', () => { hdr.classList.toggle('closed'); cases.classList.toggle('closed'); });
@@ -447,7 +883,7 @@ function buildTC(tc) {
 
   const hdr = document.createElement('div');
   hdr.className = 'tc-hdr';
-  hdr.innerHTML = `<span class="dot"></span><span class="tc-name">${esc(tc.name)}</span>${dur ? `<span class="tc-dur">${dur}</span>` : ''}${hasDetail ? '<span class="tc-arr">▶</span>' : ''}`;
+  hdr.innerHTML = `<span class="dot"></span><span class="tc-name">${esc(tc.name)}</span>${dur ? `<span class="tc-dur">${dur}</span>` : ''}${hasDetail ? '<span class="tc-arr">&#x25BA;</span>' : ''}`;
   el.appendChild(hdr);
 
   if (hasDetail) {
@@ -458,7 +894,7 @@ function buildTC(tc) {
     const detail = document.createElement('div');
     detail.className = 'tc-detail';
     detail.innerHTML = `<div class="fail-msg">${esc(msg || stack)}</div>` +
-      (hasStack ? `<button class="stack-btn" type="button">▶ Stack trace</button><pre class="stack">${esc(stack)}</pre>` : '');
+      (hasStack ? `<button class="stack-btn" type="button">&#x25BA; Stack trace</button><pre class="stack">${esc(stack)}</pre>` : '');
     el.appendChild(detail);
 
     hdr.addEventListener('click', () => {
@@ -471,7 +907,7 @@ function buildTC(tc) {
     if (btn && pre) btn.addEventListener('click', e => {
       e.stopPropagation();
       const v = pre.classList.toggle('open');
-      btn.textContent = v ? '▼ Stack trace' : '▶ Stack trace';
+      btn.textContent = v ? '&#x25BC; Stack trace' : '&#x25BA; Stack trace';
     });
 
     if (tc.status === 'failed' || tc.status === 'error') {
@@ -482,65 +918,7 @@ function buildTC(tc) {
   return el;
 }
 
-function buildExpiredBanner() {
-  const el = document.createElement('div');
-  el.style.cssText = 'margin-bottom:14px;padding:10px 14px;background:rgba(227,179,65,.08);border:1px solid rgba(227,179,65,.25);border-radius:6px;font-size:12px;color:var(--warning);display:flex;align-items:center;gap:8px;';
-  el.innerHTML = `<span>🗓️</span> Artifacts expired — results loaded from GitHub check run summaries. Stack traces may be limited.`;
-  return el;
-}
-
-function buildExpiredInfo() {
-  const el = document.createElement('div');
-  el.style.cssText = 'max-width:520px;margin:40px auto;text-align:center;';
-  el.innerHTML = `
-    <div style="font-size:36px;margin-bottom:12px">🗓️</div>
-    <div style="font-size:15px;font-weight:600;margin-bottom:8px">Artifacts expired</div>
-    <div style="color:var(--muted);font-size:13px;margin-bottom:16px">
-      The ${data.expiredArtifacts} test report artifact${data.expiredArtifacts > 1 ? 's' : ''} for this run
-      have been deleted by GitHub (default retention is 90 days).
-      ${!tokenEl.value.trim() ? '<br><br>Enter a GitHub token above — test results can still be loaded from check run summaries.' : 'Check run summaries were not found for this run.'}
-    </div>
-    <a href="${esc(data.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub ↗</a>`;
-  return el;
-}
-
-function buildNoArtifactsInfo() {
-  const jobs = data.jobs || {};
-  const failedJobs = jobs.failed || [];
-  const skippedTests = jobs.skippedTests || [];
-
-  const el = document.createElement('div');
-  el.style.cssText = 'max-width:560px;margin:40px auto;text-align:center;';
-
-  const nonTestFailed = failedJobs.filter(n => !/Report|Result/i.test(n));
-  const buildFailed = nonTestFailed.length > 0;
-  const testsWereSkipped = skippedTests.length > 0;
-
-  if (buildFailed) {
-    el.innerHTML = `
-      <div style="font-size:36px;margin-bottom:12px">🏗️</div>
-      <div style="font-size:15px;font-weight:600;margin-bottom:8px">Build failed — tests did not run</div>
-      <div style="color:var(--muted);font-size:13px;margin-bottom:16px">
-        ${testsWereSkipped ? 'The following job(s) failed before tests could execute, causing all test jobs to be skipped.' : 'The following non-test job(s) failed. No test artifacts were produced.'}
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:20px">
-        ${nonTestFailed.map(n => `<span style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--error);padding:3px 10px;border-radius:4px;font-family:var(--mono);font-size:12px">${esc(n)}</span>`).join('')}
-      </div>
-      <a href="${esc(data.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub ↗</a>`;
-  } else if (data.run.status === 'in_progress') {
-    el.innerHTML = `
-      <div style="font-size:36px;margin-bottom:12px">⏳</div>
-      <div style="font-size:15px;font-weight:600;margin-bottom:8px">Tests still running</div>
-      <div style="color:var(--muted);font-size:13px">No test artifacts have been uploaded yet. Try again in a moment.</div>`;
-  } else {
-    el.innerHTML = `
-      <div style="font-size:36px;margin-bottom:12px">📭</div>
-      <div style="font-size:15px;font-weight:600;margin-bottom:8px">No test artifacts found</div>
-      <div style="color:var(--muted);font-size:13px;margin-bottom:12px">This run did not produce any test report artifacts.</div>
-      <a href="${esc(data.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub ↗</a>`;
-  }
-  return el;
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function filterCases(cases, q) {
   return cases.filter(tc => {
@@ -552,31 +930,35 @@ function filterCases(cases, q) {
 }
 
 function expandAll() {
-  document.querySelectorAll('.tc.failed .tc-detail, .tc.error .tc-detail').forEach(d => { d.classList.add('open'); d.previousElementSibling?.classList.add('open'); });
+  document.querySelectorAll('.tc.failed .tc-detail, .tc.error .tc-detail').forEach(d => {
+    d.classList.add('open');
+    d.previousElementSibling?.classList.add('open');
+  });
   document.querySelectorAll('.suite-cases, .group-body').forEach(c => c.classList.remove('closed'));
   document.querySelectorAll('.suite-hdr, .group-hdr').forEach(h => h.classList.remove('closed'));
 }
 
 function fails(cases) { return cases.filter(t => t.status === 'failed' || t.status === 'error').length; }
 
-function reset() {
-  $('run-bar').style.display = 'none';
-  $('stats-bar').style.display = 'none';
-  $('toolbar').style.display = 'none';
-  $('error-box').style.display = 'none';
-  $('results').innerHTML = '';
-  data = null;
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function showError(msg) {
-  const el = $('error-box');
-  el.style.display = 'block';
-  const need401 = msg.includes('401') || msg.includes('403');
-  el.innerHTML = `<strong>Error:</strong> ${esc(msg)}` +
-    (need401 ? '<br><br>Enter a GitHub personal access token in the Token field — required even for public repo artifacts.' : '');
+function timeAgo(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
-function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
+fetchState();
 </script>
 </body>
 </html>
