@@ -402,11 +402,10 @@ function renderList() {
   // Count by status for filter tabs
   const counts = { failing: 0, building: 0, build_failed: 0, pending: 0, passing: 0 };
   for (const p of prs) if (counts[p.status] !== undefined) counts[p.status]++;
-  const activeCount = prs.filter(p => p.status !== 'passing').length;
 
-  // Filter bar — "All" means non-passing; "Passing" tab shown only if there are passing PRs
+  // Filter bar — "All" includes passing (passing cards are non-clickable)
   const filterDefs = [
-    { key: 'all',          label: 'All',         count: activeCount },
+    { key: 'all',          label: 'All',         count: prs.length },
     { key: 'failing',      label: 'Failing',     count: counts.failing },
     { key: 'building',     label: 'Building',    count: counts.building },
     { key: 'build_failed', label: 'Build Failed',count: counts.build_failed },
@@ -422,10 +421,8 @@ function renderList() {
     renderList();
   }));
 
-  // Filter PRs — "all" hides passing PRs; other tabs filter by status
-  const filtered = listFilter === 'all'
-    ? prs.filter(p => p.status !== 'passing')
-    : prs.filter(p => p.status === listFilter);
+  // Filter PRs — "all" includes passing; other tabs filter by status
+  const filtered = listFilter === 'all' ? prs : prs.filter(p => p.status === listFilter);
 
   if (filtered.length === 0) {
     $('empty-list').style.display = 'block';
@@ -468,7 +465,8 @@ function buildPRCard(pr) {
   }
 
   if (pr.status === 'build_failed' && pr.jobs?.failedNonTest?.length) {
-    const label = pr.checkRunSuites?.length > 0 ? 'Job failed (tests ran):' : 'Failed (no tests ran):';
+    const testsRan = pr.checkRunSuites?.length > 0 || pr.artifacts?.some(a => a.suites?.length > 0);
+    const label = testsRan ? 'Failed (tests ran):' : 'Failed (no tests ran):';
     countsHtml += `<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">` +
       `<span style="font-size:11px;color:var(--muted)">${label}</span>` +
       pr.jobs.failedNonTest.map(n => `<span style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--error);padding:1px 8px;border-radius:4px;font-family:var(--mono);font-size:11px">${esc(n)}</span>`).join('') +
