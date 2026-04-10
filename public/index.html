@@ -369,7 +369,7 @@ function updateHeader() {
   const passing = state.prs.filter(p => p.status === 'passing').length;
   const count = state.prs.length - passing;
   const building = state.prs.filter(p => p.status === 'building').length;
-  const failing = state.prs.filter(p => p.status === 'failing').length;
+  const failing = state.prs.filter(p => p.status === 'failing' || p.status === 'build_failed').length;
 
   let summary = `${count} active PR${count !== 1 ? 's' : ''}`;
   if (passing) summary += ` · ${passing} passing`;

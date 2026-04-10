@@ -77,18 +77,37 @@ function extractFailure(node) {
   };
 }
 
+// If the same test appears multiple times (Gradle retry plugin), resolve to final outcome:
+// any passing attempt → flaky pass; all failed → genuine failure.
+function deduplicateRetries(testcases) {
+  const groups = new Map();
+  for (const tc of testcases) {
+    const key = `${tc.classname}\0${tc.name}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(tc);
+  }
+  const result = [];
+  for (const [, attempts] of groups) {
+    if (attempts.length === 1) { result.push(attempts[0]); continue; }
+    const passed = attempts.find(tc => tc.status === 'passed');
+    result.push(passed ?? attempts[attempts.length - 1]);
+  }
+  return result;
+}
+
 function parseXml(xml) {
   let parsed;
   try { parsed = xmlParser.parse(xml); } catch { return []; }
   const suites = parsed.testsuites?.testsuite || parsed.testsuite || [];
   return suites.filter(Boolean).map((suite) => {
-    const testcases = (suite.testcase || []).map((tc) => {
+    const raw = (suite.testcase || []).map((tc) => {
       let status = 'passed', failure = null;
-      if (tc.failure !== undefined) { status = 'failed';  failure = extractFailure(tc.failure); }
-      else if (tc.error !== undefined) { status = 'error'; failure = extractFailure(tc.error); }
+      if (tc.failure !== undefined) { failure = extractFailure(tc.failure); if (failure) status = 'failed'; }
+      else if (tc.error !== undefined) { failure = extractFailure(tc.error); if (failure) status = 'error'; }
       else if (tc.skipped !== undefined) { status = 'skipped'; }
       return { classname: tc.classname || '', name: tc.name || '', time: parseFloat(tc.time) || 0, status, failure };
     });
+    const testcases = deduplicateRetries(raw);
     return { name: suite.name || 'Unknown', time: parseFloat(suite.time) || 0, testcases };
   });
 }
@@ -208,7 +227,14 @@ async function processPR(prMeta, existingState) {
     ghJson(`/repos/${OWNER}/${REPO}/actions/runs/${run.id}/jobs?per_page=100`),
   ]);
 
-  const testArtifacts  = artifacts.filter(a => /^(unit|integration|acceptance|property|reference)-reports-/.test(a.name));
+  // Re-runs leave stale artifacts behind with the same name but a lower id.
+  // Keep only the highest-id artifact per name (most recent upload = latest attempt).
+  const allTestArtifacts = artifacts.filter(a => /^(unit|integration|acceptance|property|reference)-reports-/.test(a.name));
+  const byName = new Map();
+  for (const a of allTestArtifacts) {
+    if (!byName.has(a.name) || a.id > byName.get(a.name).id) byName.set(a.name, a);
+  }
+  const testArtifacts = [...byName.values()];
   const expiredCount   = testArtifacts.filter(a => a.expired).length;
   const downloadable   = testArtifacts.filter(a => !a.expired);
   const failedJobs     = jobs.filter(j => j.conclusion === 'failure').map(j => j.name);
