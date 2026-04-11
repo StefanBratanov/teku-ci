@@ -310,6 +310,9 @@ let listFilter = 'all';
 let testFilter = 'failed';
 let search = '';
 let pollTimer = null;
+// Cache artifact data keyed by pr.number → { runId, artifacts }.
+// Avoids re-fetching from /api/pr/:number on every 60s state poll.
+const testCache = new Map();
 
 const $ = id => document.getElementById(id);
 
@@ -329,7 +332,8 @@ async function fetchState() {
 
 function schedulePoll() {
   clearTimeout(pollTimer);
-  pollTimer = setTimeout(fetchState, 30_000);
+  const hasBuilding = state?.prs?.some(p => p.status === 'building');
+  pollTimer = setTimeout(fetchState, hasBuilding ? 30_000 : 60_000);
 }
 
 function onStateUpdate() {
@@ -511,29 +515,10 @@ function buildPRCard(pr) {
 }
 
 function getPRStats(pr) {
-  let total = 0, fail = 0, pass = 0, skip = 0;
-  function addSuite(suite) {
-    if (suite.total !== undefined) {
-      // Compact format: only failed/skipped in testcases; counts stored on suite
-      fail  += (suite.testcases || []).filter(tc => tc.status === 'failed' || tc.status === 'error').length;
-      total += suite.total;
-      pass  += suite.passed  || 0;
-      skip  += suite.skipped || 0;
-    } else {
-      for (const tc of (suite.testcases || [])) {
-        total++;
-        if (tc.status === 'failed' || tc.status === 'error') fail++;
-        else if (tc.status === 'skipped') skip++;
-        else pass++;
-      }
-    }
-  }
-  for (const art of (pr.artifacts || []))
-    for (const suite of (art.suites || []))
-      addSuite(suite);
-  for (const suite of (pr.checkRunSuites || []))
-    addSuite(suite);
-  return { total, fail, pass, skip };
+  // Server precomputes testCounts so the state payload stays small.
+  const c = pr.testCounts;
+  if (c) return { total: c.total, fail: c.fail, pass: c.pass, skip: c.skip };
+  return { total: 0, fail: 0, pass: 0, skip: 0 };
 }
 
 // ── Detail view ──────────────────────────────────────────────────────────────
@@ -586,7 +571,8 @@ function renderDetail(pr) {
 
   if (pr.status === 'build_failed') {
     const nonTest = pr.jobs?.failedNonTest || pr.jobs?.failed || [];
-    const hasTests = pr.checkRunSuites?.length > 0 || pr.artifacts?.some(a => a.suites?.length > 0);
+    // checkRunSuites are kept in state; hasArtifacts flags whether artifact data exists server-side.
+    const hasTests = pr.checkRunSuites?.length > 0 || pr.hasArtifacts;
 
     if (hasTests) {
       // Non-test job failed but tests ran — show a warning banner then test results
@@ -594,9 +580,7 @@ function renderDetail(pr) {
       $('error-box').style.cssText += ';background:rgba(227,179,65,.08);border-color:rgba(227,179,65,.25);color:var(--warning);';
       $('error-box').innerHTML = `Build job failed${nonTest.length ? ` (<strong>${nonTest.map(esc).join(', ')}</strong>)` : ''} but tests ran — results below.` +
         (pr.run?.html_url ? ` <a href="${esc(pr.run.html_url)}" target="_blank" style="color:var(--blue)">CI run &#8599;</a>` : '');
-      renderTestResults({ artifacts: pr.artifacts || [], checkRunSuites: pr.checkRunSuites || [],
-                          expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
-                          runUrl: pr.run?.html_url || null });
+      loadPRTests(pr);
       return;
     }
 
@@ -618,9 +602,8 @@ function renderDetail(pr) {
   }
 
   if (pr.status === 'building') {
-    const partial = pr.artifacts || [];
-    const hasPartial = partial.some(a => a.suites?.length > 0);
-    if (!hasPartial) {
+    // pr.artifacts is stripped from state — use pr.hasArtifacts flag instead.
+    if (!pr.hasArtifacts) {
       $('stats-bar').style.display = 'none';
       $('toolbar').style.display = 'none';
       $('error-box').style.display = 'none';
@@ -634,20 +617,47 @@ function renderDetail(pr) {
         </div>`;
       return;
     }
+    // hasArtifacts=true → some test jobs finished, fall through to loadPRTests for partial results
   }
 
-  // Render immediately if data is already in state (Node.js path: pr.artifacts,
-  // or Cloudflare expired-artifacts path: pr.checkRunSuites)
-  const hasLocalData = pr.checkRunSuites?.length > 0 ||
-                       pr.artifacts?.some(a => a.suites?.length > 0);
-  if (hasLocalData) {
-    renderTestResults({ artifacts: pr.artifacts || [], checkRunSuites: pr.checkRunSuites || [],
+  // checkRunSuites (expired artifacts) are kept in state — render directly, no fetch needed.
+  // Otherwise, load artifact detail on demand via /api/pr/:number (cached after first fetch).
+  if (pr.checkRunSuites?.length > 0 && !pr.hasArtifacts) {
+    renderTestResults({ artifacts: [], checkRunSuites: pr.checkRunSuites,
+                        expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
+                        runUrl: pr.run?.html_url || null });
+    return;
+  }
+  loadPRTests(pr);
+}
+
+// ── On-demand test loading ───────────────────────────────────────────────────
+
+async function loadPRTests(pr) {
+  // Cache key for building PRs includes the total test count from state.
+  // When new artifacts arrive the total increases → cache miss → fresh fetch → updated partial results.
+  // When nothing new has uploaded → cache hit → no spinner flash on the 30s poll.
+  // For completed runs the key is just runId (stable forever).
+  const cacheKey = pr.status === 'building'
+    ? `${pr.runId}:${pr.testCounts?.total ?? 0}`
+    : pr.runId;
+  const cached = testCache.get(pr.number);
+  if (cached?.key === cacheKey) {
+    renderTestResults({ artifacts: cached.artifacts, checkRunSuites: pr.checkRunSuites || [],
                         expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
                         runUrl: pr.run?.html_url || null });
     return;
   }
 
-  // No local data — fetch on-demand via /api/pr/:number (Cloudflare Worker path)
+  // No artifact data at all (e.g. tests skipped, status pending) — nothing to fetch.
+  if (!pr.hasArtifacts) {
+    renderTestResults({ artifacts: [], checkRunSuites: pr.checkRunSuites || [],
+                        expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
+                        runUrl: pr.run?.html_url || null });
+    return;
+  }
+
+  // Cache miss — show spinner and fetch artifact detail.
   $('stats-bar').style.display = 'none';
   $('toolbar').style.display = 'none';
   $('error-box').style.display = 'none';
@@ -655,19 +665,16 @@ function renderDetail(pr) {
     <div style="display:flex;flex-direction:column;align-items:center;padding:60px 24px;gap:14px;color:var(--muted)">
       <div class="spinner lg"></div><span>Loading test results…</span>
     </div>`;
-  loadPRTests(pr);
-}
 
-// ── On-demand test loading ───────────────────────────────────────────────────
-
-async function loadPRTests(pr) {
   try {
     const res = await fetch(`/api/pr/${pr.number}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const testData = await res.json();
     if (testData.error) throw new Error(testData.error);
     if (selectedPR !== pr.number) return; // navigated away while fetching
-    renderTestResults({ artifacts: testData.artifacts || [], checkRunSuites: testData.checkRunSuites || [],
+    const artifacts = testData.artifacts || [];
+    testCache.set(pr.number, { key: cacheKey, artifacts });
+    renderTestResults({ artifacts, checkRunSuites: pr.checkRunSuites || [],
                         expiredArtifacts: testData.expiredArtifacts || 0, jobs: pr.jobs || {},
                         runUrl: pr.run?.html_url || null });
   } catch (e) {

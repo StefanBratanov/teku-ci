@@ -112,6 +112,36 @@ function parseXml(xml) {
   });
 }
 
+// Keep only failures + aggregate counts; passing test objects are discarded.
+// The frontend already handles this compact format (suite.total / suite.passed / suite.skipped).
+function compactSuites(suites) {
+  return suites.map(({ name, time, testcases }) => {
+    const passed  = testcases.filter(t => t.status === 'passed').length;
+    const skipped = testcases.filter(t => t.status === 'skipped').length;
+    const failures = testcases.filter(t => t.status === 'failed' || t.status === 'error');
+    return { name, time, total: testcases.length, passed, skipped, testcases: failures };
+  });
+}
+
+// Precompute counts from already-compacted artifacts/checkRunSuites for the state endpoint.
+function computeTestCounts(artifacts, checkRunSuites) {
+  let total = 0, fail = 0, pass = 0, skip = 0;
+  for (const art of (artifacts || []))
+    for (const s of (art.suites || [])) {
+      fail  += s.testcases.length; // compact: only failures stored
+      total += s.total  || 0;
+      pass  += s.passed  || 0;
+      skip  += s.skipped || 0;
+    }
+  for (const s of (checkRunSuites || [])) {
+    fail  += (s.testcases || []).filter(t => t.status === 'failed' || t.status === 'error').length;
+    total += s.total  || 0;
+    pass  += s.passed  || 0;
+    skip  += s.skipped || 0;
+  }
+  return { total, fail, pass, skip };
+}
+
 async function downloadAndParseArtifact(artifactId, artifactName) {
   const res = await ghFetch(
     `https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${artifactId}/zip`
@@ -124,7 +154,7 @@ async function downloadAndParseArtifact(artifactId, artifactName) {
     try { suites.push(...parseXml(entry.getData().toString('utf8'))); }
     catch (e) { console.error(`Parse error ${entry.entryName}: ${e.message}`); }
   }
-  return { artifactName, suites };
+  return { artifactName, suites: compactSuites(suites) };
 }
 
 // ── Check-run summary fallback (expired artifacts) ───────────────────────────
@@ -248,7 +278,8 @@ async function processPR(prMeta, existingState) {
       ? await Promise.all(downloadable.map(a => downloadAndParseArtifact(a.id, a.name)))
       : [];
     return { ...base, status: 'building', inProgressJobs, artifacts: partial,
-             jobs: { failed: failedJobs, skippedTests } };
+             jobs: { failed: failedJobs, skippedTests },
+             testCounts: computeTestCounts(partial, []), hasArtifacts: partial.length > 0 };
   }
 
   // Build failed — check if tests actually ran (summaries tell us even without artifacts)
@@ -256,7 +287,8 @@ async function processPR(prMeta, existingState) {
   if (testArtifacts.length === 0 && nonTestFailed.length > 0) {
     const checkRunSuites = await fetchCheckRunSummaries(prMeta.head.sha);
     return { ...base, status: 'build_failed', checkRunSuites,
-             jobs: { failed: failedJobs, failedNonTest: nonTestFailed, skippedTests } };
+             jobs: { failed: failedJobs, failedNonTest: nonTestFailed, skippedTests },
+             testCounts: computeTestCounts([], checkRunSuites), hasArtifacts: false };
   }
 
   // All artifacts expired — try check-run summaries
@@ -265,7 +297,8 @@ async function processPR(prMeta, existingState) {
     const hasFails = checkRunSuites.some(s => s.testcases.some(tc => tc.status === 'failed'));
     return { ...base, status: hasFails ? 'failing' : 'passing',
              expiredArtifacts: expiredCount, checkRunSuites,
-             jobs: { failed: failedJobs, skippedTests } };
+             jobs: { failed: failedJobs, skippedTests },
+             testCounts: computeTestCounts([], checkRunSuites), hasArtifacts: false };
   }
 
   // No test artifacts and no build failure (e.g. tests were skipped)
@@ -277,8 +310,8 @@ async function processPR(prMeta, existingState) {
   const artifactResults = await Promise.all(
     downloadable.map(a => downloadAndParseArtifact(a.id, a.name))
   );
-  const allCases  = artifactResults.flatMap(a => a.suites.flatMap(s => s.testcases));
-  const hasFails  = allCases.some(tc => tc.status === 'failed' || tc.status === 'error');
+  // After compaction, testcases only contains failures — any entry means a failure
+  const hasFails = artifactResults.some(a => a.suites.some(s => s.testcases.length > 0));
 
   // Tests passed but a non-test job failed (e.g. windowsBuild) → build_failed, not failing
   const status = hasFails ? 'failing' : nonTestFailed.length > 0 ? 'build_failed' : 'passing';
@@ -288,6 +321,7 @@ async function processPR(prMeta, existingState) {
     artifacts: artifactResults,
     expiredArtifacts: expiredCount,
     jobs: { failed: failedJobs, failedNonTest: nonTestFailed, skippedTests },
+    testCounts: computeTestCounts(artifactResults, []), hasArtifacts: true,
   };
 }
 
@@ -364,9 +398,19 @@ const app = express();
 app.use(express.static('public'));
 
 app.get('/api/state', (req, res) => {
+  // Strip large artifact arrays — clients fetch per-PR detail on demand via /api/pr/:number.
+  // checkRunSuites are kept because they're already compact (failures only, no individual XML parsing).
   const prs = [...prState.values()]
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .map(({ artifacts, ...rest }) => rest);
   res.json({ prs, lastRefresh: lastRefresh?.toISOString() || null, refreshing: isRefreshing, initialized });
+});
+
+// Per-PR artifact detail — called on demand when the user opens a PR in the UI.
+app.get('/api/pr/:number', (req, res) => {
+  const pr = prState.get(Number(req.params.number));
+  if (!pr) return res.status(404).json({ error: 'PR not found' });
+  res.json({ artifacts: pr.artifacts || [], expiredArtifacts: pr.expiredArtifacts || 0 });
 });
 
 // Trigger a manual refresh
