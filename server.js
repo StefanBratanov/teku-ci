@@ -154,7 +154,29 @@ async function downloadAndParseArtifact(artifactId, artifactName) {
     try { suites.push(...parseXml(entry.getData().toString('utf8'))); }
     catch (e) { console.error(`Parse error ${entry.entryName}: ${e.message}`); }
   }
-  return { artifactName, suites: compactSuites(suites) };
+  // Deduplicate suite names within this ZIP (handles ZIPs that contain both
+  // individual TEST-*.xml and an aggregate XML for the same suites).
+  // Prefer the suite with more test cases (more granular data).
+  const bySuiteName = new Map();
+  for (const s of suites) {
+    const existing = bySuiteName.get(s.name);
+    if (!existing || s.testcases.length > existing.testcases.length)
+      bySuiteName.set(s.name, s);
+  }
+  return { artifactName, suites: compactSuites([...bySuiteName.values()]) };
+}
+
+// Deduplicate suite names across artifacts — prevents inflated counts when each
+// parallel CI artifact contains the full test report instead of just its own partition.
+function deduplicateSuites(artifactResults) {
+  const seen = new Set();
+  for (const art of artifactResults) {
+    art.suites = (art.suites || []).filter(s => {
+      if (seen.has(s.name)) return false;
+      seen.add(s.name);
+      return true;
+    });
+  }
 }
 
 // ── Check-run summary fallback (expired artifacts) ───────────────────────────
@@ -277,6 +299,7 @@ async function processPR(prMeta, existingState) {
     const partial = downloadable.length > 0
       ? await Promise.all(downloadable.map(a => downloadAndParseArtifact(a.id, a.name)))
       : [];
+    deduplicateSuites(partial);
     return { ...base, status: 'building', inProgressJobs, artifacts: partial,
              jobs: { failed: failedJobs, skippedTests },
              testCounts: computeTestCounts(partial, []), hasArtifacts: partial.length > 0 };
@@ -310,6 +333,7 @@ async function processPR(prMeta, existingState) {
   const artifactResults = await Promise.all(
     downloadable.map(a => downloadAndParseArtifact(a.id, a.name))
   );
+  deduplicateSuites(artifactResults);
   // After compaction, testcases only contains failures — any entry means a failure
   const hasFails = artifactResults.some(a => a.suites.some(s => s.testcases.length > 0));
 
