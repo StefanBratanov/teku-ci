@@ -446,11 +446,7 @@ function buildPRCard(pr) {
   const stats = getPRStats(pr);
   const card = document.createElement('div');
   card.className = `pr-card status-${pr.status}`;
-  if (pr.status !== 'passing') {
-    card.addEventListener('click', () => selectPR(pr.number));
-  } else {
-    card.style.cursor = 'default';
-  }
+  card.addEventListener('click', () => selectPR(pr.number));
 
   const statusLabels = { failing: 'Failing Tests', passing: 'Passing', building: 'Building', build_failed: 'Build Failed', pending: 'Pending' };
   const badgeLabel = statusLabels[pr.status] || pr.status;
@@ -628,6 +624,24 @@ function renderDetail(pr) {
                         runUrl: pr.run?.html_url || null });
     return;
   }
+
+  // No test data of any kind available
+  if (!pr.hasArtifacts) {
+    $('stats-bar').style.display = 'none';
+    $('toolbar').style.display = 'none';
+    $('error-box').style.display = 'none';
+    $('results').innerHTML = `
+      <div style="max-width:520px;margin:40px auto;text-align:center;">
+        <div style="font-size:36px;margin-bottom:12px">${pr.status === 'passing' ? '&#x2705;' : '&#x1F4C2;'}</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px;color:${pr.status === 'passing' ? 'var(--success)' : 'var(--muted)'}">
+          ${pr.status === 'passing' ? 'All tests passed' : 'No test details available'}
+        </div>
+        <div style="color:var(--muted);font-size:13px">Test artifacts are not available for this run.</div>
+        ${pr.run?.html_url ? `<div style="margin-top:14px"><a href="${esc(pr.run.html_url)}" target="_blank" style="color:var(--blue);font-size:13px">View CI run on GitHub &#8599;</a></div>` : ''}
+      </div>`;
+    return;
+  }
+
   loadPRTests(pr);
 }
 
@@ -773,7 +787,13 @@ function renderResultsInner(detailData) {
 
   if (shown === 0) {
     const crSuites = (detailData.checkRunSuites || []).filter(s => s.total > 0);
-    if (crSuites.length > 0 && testFilter === 'failed') {
+    const artifactTotal = (detailData.artifacts || [])
+      .flatMap(a => a.suites || [])
+      .reduce((n, s) => n + (s.total || 0), 0);
+    if (artifactTotal > 0 && testFilter === 'failed') {
+      // Artifacts loaded, all tests passed — nothing to show under "Failed" filter
+      container.innerHTML = `<div class="empty" style="color:var(--success)">All ${artifactTotal} tests passed.<br><span style="color:var(--muted);font-size:12px">Switch to <strong>All</strong> to see suite breakdown.</span></div>`;
+    } else if (crSuites.length > 0 && testFilter === 'failed') {
       // All tests passed — nothing to show under "Failed" filter
       const totalPassed = crSuites.reduce((n, s) => n + (s.total || 0), 0);
       container.innerHTML = `<div class="empty" style="color:var(--success)">All ${totalPassed} tests passed.<br><span style="color:var(--muted);font-size:12px">Switch to <strong>All</strong> to see suite breakdown.</span></div>`;
@@ -824,7 +844,7 @@ function buildGroup(type, artifacts, q) {
 
   suites.sort((a, b) => fails(b.testcases) - fails(a.testcases));
 
-  const total = suites.reduce((n, s) => n + s.testcases.length, 0);
+  const total = suites.reduce((n, s) => n + (s.summaryOnly ? (s.total || 0) : s.testcases.length), 0);
   const f = suites.reduce((n, s) => n + fails(s.testcases), 0);
   const labels = { unit:'Unit Tests', integration:'Integration Tests', acceptance:'Acceptance Tests', property:'Property Tests', reference:'Reference Tests', other:'Other' };
 
