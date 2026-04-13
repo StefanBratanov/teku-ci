@@ -673,7 +673,8 @@ async function loadPRTests(pr) {
   if (cached?.key === cacheKey) {
     renderTestResults({ artifacts: cached.artifacts, checkRunSuites: pr.checkRunSuites || [],
                         expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
-                        runUrl: pr.run?.html_url || null });
+                        runUrl: pr.run?.html_url || null,
+                        status: pr.status, inProgressJobs: pr.inProgressJobs || [] });
     return;
   }
 
@@ -681,7 +682,8 @@ async function loadPRTests(pr) {
   if (!pr.hasArtifacts) {
     renderTestResults({ artifacts: [], checkRunSuites: pr.checkRunSuites || [],
                         expiredArtifacts: pr.expiredArtifacts || 0, jobs: pr.jobs || {},
-                        runUrl: pr.run?.html_url || null });
+                        runUrl: pr.run?.html_url || null,
+                        status: pr.status, inProgressJobs: pr.inProgressJobs || [] });
     return;
   }
 
@@ -704,7 +706,8 @@ async function loadPRTests(pr) {
     testCache.set(pr.number, { key: cacheKey, artifacts });
     renderTestResults({ artifacts, checkRunSuites: pr.checkRunSuites || [],
                         expiredArtifacts: testData.expiredArtifacts || 0, jobs: pr.jobs || {},
-                        runUrl: pr.run?.html_url || null });
+                        runUrl: pr.run?.html_url || null,
+                        status: pr.status, inProgressJobs: pr.inProgressJobs || [] });
   } catch (e) {
     if (selectedPR !== pr.number) return;
     $('results').innerHTML = `<div class="empty" style="color:var(--error)">Failed to load test results: ${esc(e.message)}</div>`;
@@ -766,7 +769,15 @@ function renderTestResults(detailData) {
 
   $('error-box').style.display = 'none';
 
-  if (detailData.expiredArtifacts > 0 && detailData.checkRunSuites?.length > 0) {
+  if (detailData.status === 'building') {
+    $('error-box').style.display = 'block';
+    $('error-box').style.cssText += ';background:rgba(88,166,255,.08);border-color:rgba(88,166,255,.25);color:var(--blue);';
+    const jobs = detailData.inProgressJobs || [];
+    const running = jobs.length
+      ? `Running: ${jobs.slice(0, 5).map(esc).join(', ')}${jobs.length > 5 ? ` +${jobs.length - 5} more` : ''}. `
+      : '';
+    $('error-box').innerHTML = `Build in progress \u2014 ${running}Results below are partial.`;
+  } else if (detailData.expiredArtifacts > 0 && detailData.checkRunSuites?.length > 0) {
     $('error-box').style.display = 'block';
     $('error-box').style.cssText += ';background:rgba(227,179,65,.08);border-color:rgba(227,179,65,.25);color:var(--warning);';
     $('error-box').innerHTML = 'Artifacts expired — results loaded from GitHub check run summaries. Stack traces may be limited.';
@@ -826,11 +837,19 @@ function renderResultsInner(detailData) {
       .reduce((n, s) => n + (s.total || 0), 0);
     if (artifactTotal > 0 && testFilter === 'failed') {
       // Artifacts loaded, all tests passed — nothing to show under "Failed" filter
-      container.innerHTML = `<div class="empty" style="color:var(--success)">All ${artifactTotal} tests passed.<br><span style="color:var(--muted);font-size:12px">Switch to <strong>All</strong> to see suite breakdown.</span></div>`;
+      const isBuilding = detailData.status === 'building';
+      const msg = isBuilding
+        ? `${artifactTotal} tests passed so far (build still in progress).`
+        : `All ${artifactTotal} tests passed.`;
+      container.innerHTML = `<div class="empty" style="color:var(--success)">${msg}<br><span style="color:var(--muted);font-size:12px">Switch to <strong>All</strong> to see suite breakdown.</span></div>`;
     } else if (crSuites.length > 0 && testFilter === 'failed') {
       // All tests passed — nothing to show under "Failed" filter
       const totalPassed = crSuites.reduce((n, s) => n + (s.total || 0), 0);
-      container.innerHTML = `<div class="empty" style="color:var(--success)">All ${totalPassed} tests passed.<br><span style="color:var(--muted);font-size:12px">Switch to <strong>All</strong> to see suite breakdown.</span></div>`;
+      const isBuilding = detailData.status === 'building';
+      const msg = isBuilding
+        ? `${totalPassed} tests passed so far (build still in progress).`
+        : `All ${totalPassed} tests passed.`;
+      container.innerHTML = `<div class="empty" style="color:var(--success)">${msg}<br><span style="color:var(--muted);font-size:12px">Switch to <strong>All</strong> to see suite breakdown.</span></div>`;
     } else if (crSuites.length > 0) {
       // "All" filter — show suite-level summary (no individual test entries available from check-run)
       for (const suite of crSuites) {
