@@ -128,7 +128,7 @@ function computeTestCounts(artifacts, checkRunSuites) {
   let total = 0, fail = 0, pass = 0, skip = 0;
   for (const art of (artifacts || []))
     for (const s of (art.suites || [])) {
-      fail  += s.testcases.length; // compact: only failures stored
+      fail  += s.testcases.filter(t => t.status === 'failed' || t.status === 'error').length;
       total += s.total  || 0;
       pass  += s.passed  || 0;
       skip  += s.skipped || 0;
@@ -334,8 +334,7 @@ async function processPR(prMeta, existingState) {
     downloadable.map(a => downloadAndParseArtifact(a.id, a.name))
   );
   deduplicateSuites(artifactResults);
-  // After compaction, testcases only contains failures — any entry means a failure
-  const hasFails = artifactResults.some(a => a.suites.some(s => s.testcases.length > 0));
+  const hasFails = artifactResults.some(a => a.suites.some(s => s.testcases.some(t => t.status === 'failed' || t.status === 'error')));
 
   // Tests passed but a non-test job failed (e.g. windowsBuild) → build_failed, not failing
   const status = hasFails ? 'failing' : nonTestFailed.length > 0 ? 'build_failed' : 'passing';
