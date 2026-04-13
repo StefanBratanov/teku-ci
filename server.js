@@ -112,14 +112,14 @@ function parseXml(xml) {
   });
 }
 
-// Keep only failures + aggregate counts; passing test objects are discarded.
+// Keep failures + skipped cases + aggregate counts; passing test objects are discarded.
 // The frontend already handles this compact format (suite.total / suite.passed / suite.skipped).
 function compactSuites(suites) {
   return suites.map(({ name, time, testcases }) => {
     const passed  = testcases.filter(t => t.status === 'passed').length;
-    const skipped = testcases.filter(t => t.status === 'skipped').length;
+    const skipped = testcases.filter(t => t.status === 'skipped');
     const failures = testcases.filter(t => t.status === 'failed' || t.status === 'error');
-    return { name, time, total: testcases.length, passed, skipped, testcases: failures };
+    return { name, time, total: testcases.length, passed, skipped: skipped.length, testcases: [...failures, ...skipped] };
   });
 }
 
