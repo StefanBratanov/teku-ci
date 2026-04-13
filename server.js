@@ -241,6 +241,20 @@ async function fetchCheckRunSummaries(sha) {
     .filter(Boolean);
 }
 
+// ── Review decisions (bulk GraphQL) ─────────────────────────────────────────
+
+async function fetchReviewDecisions(prNumbers) {
+  if (!prNumbers.length) return {};
+  const fragments = prNumbers.map(n => `pr${n}: pullRequest(number: ${n}) { reviewDecision }`).join('\n');
+  const data = await ghGraphQL(`{ repository(owner: "${OWNER}", name: "${REPO}") { ${fragments} } }`);
+  if (!data?.repository) return {};
+  const out = {};
+  for (const [key, val] of Object.entries(data.repository)) {
+    out[parseInt(key.slice(2))] = val?.reviewDecision ?? null;
+  }
+  return out;
+}
+
 // ── CI run helpers ───────────────────────────────────────────────────────────
 
 async function getLatestCIRun(sha) {
@@ -252,12 +266,13 @@ async function getLatestCIRun(sha) {
 function fmtRun(run) {
   if (!run) return null;
   return { id: run.id, status: run.status, conclusion: run.conclusion,
-           html_url: run.html_url, run_number: run.run_number, created_at: run.created_at };
+           html_url: run.html_url, run_number: run.run_number,
+           created_at: run.created_at, updated_at: run.updated_at };
 }
 
 // ── Process a single PR → determine status + fetch test data ─────────────────
 
-async function processPR(prMeta, existingState) {
+async function processPR(prMeta, existingState, reviewDecision = null) {
   const run = await getLatestCIRun(prMeta.head.sha);
 
   // Nothing changed for a completed run — preserve test data, update metadata only
@@ -265,10 +280,10 @@ async function processPR(prMeta, existingState) {
   const cachedStale = existingState?.status === 'failing' && run?.conclusion === 'success';
   if (existingState?.runId === run?.id && run?.status === 'completed' &&
       existingState.status !== 'building' && !cachedStale) {
-    return { ...existingState, ...prBase(prMeta) };
+    return { ...existingState, ...prBase(prMeta), reviewDecision };
   }
 
-  const base = { ...prBase(prMeta), runId: run?.id || null, run: fmtRun(run) };
+  const base = { ...prBase(prMeta), runId: run?.id || null, run: fmtRun(run), reviewDecision };
 
   if (!run || run.status === 'queued') {
     return { ...base, status: 'pending' };
@@ -357,9 +372,10 @@ function prBase(pr) {
     authorAvatar:pr.user.avatar_url,
     branch:      pr.head.ref,
     headSha:     pr.head.sha.slice(0, 7),
-    updatedAt:   pr.updated_at,
     isDraft:     pr.draft,
     labels:      pr.labels.map(l => ({ name: l.name, color: l.color })),
+    updatedAt:   pr.updated_at,
+    reviewers:   (pr.requested_reviewers || []).map(u => u.login),
     processedAt: new Date().toISOString(),
   };
 }
@@ -382,11 +398,14 @@ async function refresh() {
       `/repos/${OWNER}/${REPO}/pulls?state=open&per_page=50&sort=updated&direction=desc`
     );
 
+    // Fetch all review decisions in one GraphQL call
+    const reviewDecisions = await fetchReviewDecisions(prs.map(p => p.number)).catch(() => ({}));
+
     // Process PRs sequentially to avoid rate-limit spikes
     for (const pr of prs) {
       try {
         const existing = prState.get(pr.number);
-        const result   = await processPR(pr, existing);
+        const result   = await processPR(pr, existing, reviewDecisions[pr.number] ?? null);
         prState.set(pr.number, result);
       } catch (e) {
         console.error(`PR #${pr.number} error: ${e.message}`);

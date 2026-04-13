@@ -307,6 +307,7 @@ main { padding: 16px 24px 40px; }
 let state = null;
 let selectedPR = null;
 let listFilter = 'all';
+let authorFilter = null;
 let testFilter = 'failed';
 let search = '';
 let pollTimer = null;
@@ -387,6 +388,7 @@ function updateHeader() {
 
 function showList() {
   selectedPR = null;
+  authorFilter = null;
   $('detail-view').style.display = 'none';
   $('list-view').style.display = 'block';
   renderList();
@@ -417,17 +419,40 @@ function renderList() {
     { key: 'pending',      label: 'Pending',     count: counts.pending },
     { key: 'passing',      label: 'Passing',     count: counts.passing },
   ];
-  $('filter-bar').innerHTML = filterDefs
+  // Unique authors, sorted by number of PRs descending
+  const authorCounts = new Map();
+  for (const p of prs) authorCounts.set(p.author, (authorCounts.get(p.author) || 0) + 1);
+  const authors = [...authorCounts.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a);
+
+  // If current authorFilter is no longer in the list, reset it
+  if (authorFilter && !authors.includes(authorFilter)) authorFilter = null;
+
+  const statusHtml = filterDefs
     .filter(f => f.key === 'all' || f.count > 0)
     .map(f => `<button class="tab${listFilter === f.key ? ' active' : ''}" data-f="${f.key}">${f.label} <span style="opacity:.6">${f.count}</span></button>`)
     .join('');
-  $('filter-bar').querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+
+  const authorHtml = authors.length > 1
+    ? `<select id="author-filter" style="margin-left:auto;background:var(--bg);border:1px solid var(--border);color:${authorFilter ? 'var(--accent)' : 'var(--muted)'};border-radius:var(--r);padding:4px 8px;font-size:12px;cursor:pointer;outline:none;">
+        <option value="">All authors</option>
+        ${authors.map(a => `<option value="${esc(a)}"${authorFilter === a ? ' selected' : ''}>${esc(a)}</option>`).join('')}
+      </select>`
+    : '';
+
+  $('filter-bar').innerHTML = statusHtml + authorHtml;
+  $('filter-bar').querySelectorAll('.tab[data-f]').forEach(t => t.addEventListener('click', () => {
     listFilter = t.dataset.f;
     renderList();
   }));
+  const authorSelect = $('author-filter');
+  if (authorSelect) authorSelect.addEventListener('change', () => {
+    authorFilter = authorSelect.value || null;
+    renderList();
+  });
 
-  // Filter PRs — "all" includes passing; other tabs filter by status
-  const filtered = listFilter === 'all' ? prs : prs.filter(p => p.status === listFilter);
+  // Filter PRs — status filter then author filter
+  const byStatus = listFilter === 'all' ? prs : prs.filter(p => p.status === listFilter);
+  const filtered = authorFilter ? byStatus.filter(p => p.author === authorFilter) : byStatus;
 
   if (filtered.length === 0) {
     $('empty-list').style.display = 'block';
@@ -441,6 +466,7 @@ function renderList() {
   list.innerHTML = '';
   for (const pr of filtered) list.appendChild(buildPRCard(pr));
 }
+
 
 function buildPRCard(pr) {
   const stats = getPRStats(pr);
@@ -505,16 +531,46 @@ function buildPRCard(pr) {
         <span>by ${esc(pr.author)}</span>
         <code>${esc(pr.branch)}</code>
         <code>${esc(pr.headSha.slice(0,7))}</code>
-        <span>${timeAgo(pr.updatedAt)}</span>
         ${runLink}
       </div>
       ${countsHtml}
     </div>
     <div class="pr-side">
       <span class="badge ${pr.status}">${badgeLabel}</span>
+      ${getReviewBadge(pr)}
+      ${pr.run?.created_at ? `<span style="font-size:11px;color:var(--muted);text-align:right">${pr.status === 'building' ? '&#x23F1; ' : ''}${getCIDuration(pr)}</span>` : ''}
     </div>`;
 
   return card;
+}
+
+function getReviewBadge(pr) {
+  if (pr.isDraft) return '';
+  const d = pr.reviewDecision;
+  const pending = pr.reviewers?.length || 0;
+  if (d === 'APPROVED')
+    return `<span class="badge" style="background:rgba(63,185,80,.15);color:var(--success)">&#x2713; Approved</span>`;
+  if (d === 'CHANGES_REQUESTED')
+    return `<span class="badge" style="background:rgba(227,179,65,.1);color:var(--warning)">&#x26A0; Changes requested</span>`;
+  if (pending > 0) {
+    const names = pr.reviewers.slice(0, 2).join(', ');
+    const more  = pending > 2 ? ` +${pending - 2}` : '';
+    return `<span class="badge" style="background:rgba(88,166,255,.1);color:var(--blue)" title="${esc(pr.reviewers.join(', '))}">&#x23F3; ${esc(names)}${more}</span>`;
+  }
+  if (d === 'REVIEW_REQUIRED')
+    return `<span class="badge" style="background:var(--surface-2);color:var(--muted)">Review required</span>`;
+  return '';
+}
+
+function getCIDuration(pr) {
+  if (!pr.run?.created_at) return '';
+  if (!['building', 'passing', 'failing', 'build_failed'].includes(pr.status)) return '';
+  const start = new Date(pr.run.created_at);
+  const end   = (pr.status !== 'building' && pr.run.updated_at) ? new Date(pr.run.updated_at) : new Date();
+  const mins  = Math.round((end - start) / 60000);
+  if (mins < 1)  return '<1m';
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
 function getPRStats(pr) {
