@@ -466,12 +466,19 @@ function buildPRCard(pr) {
   }
 
   if (pr.status === 'build_failed' && pr.jobs?.failedNonTest?.length) {
-    const testsRan = pr.checkRunSuites?.length > 0 || pr.artifacts?.some(a => a.suites?.length > 0);
-    const label = testsRan ? 'Failed (tests ran):' : 'Failed (no tests ran):';
+    const testsRan = pr.checkRunSuites?.length > 0 || pr.hasArtifacts;
+    const label = testsRan ? 'Build failure:' : 'Failed (no tests ran):';
     countsHtml += `<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">` +
       `<span style="font-size:11px;color:var(--muted)">${label}</span>` +
       pr.jobs.failedNonTest.map(n => `<span style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--error);padding:1px 8px;border-radius:4px;font-family:var(--mono);font-size:11px">${esc(n)}</span>`).join('') +
       `</div>`;
+    const skippedTypes = getSkippedTestTypes(pr.jobs?.skippedTests);
+    if (testsRan && skippedTypes.length > 0) {
+      countsHtml += `<div style="margin-top:2px;font-size:11px;color:var(--muted)">` +
+        `<span style="color:var(--warning)">&#x26A0; Did not run:</span> ` +
+        skippedTypes.map(t => `<span style="color:var(--warning);font-family:var(--mono)">${t} tests</span>`).join(', ') +
+        `</div>`;
+    }
   }
 
   const labelsHtml = pr.labels?.length
@@ -574,8 +581,15 @@ function renderDetail(pr) {
       // Non-test job failed but tests ran — show a warning banner then test results
       $('error-box').style.display = 'block';
       $('error-box').style.cssText += ';background:rgba(227,179,65,.08);border-color:rgba(227,179,65,.25);color:var(--warning);';
-      $('error-box').innerHTML = `Build job failed${nonTest.length ? ` (<strong>${nonTest.map(esc).join(', ')}</strong>)` : ''} but tests ran — results below.` +
-        (pr.run?.html_url ? ` <a href="${esc(pr.run.html_url)}" target="_blank" style="color:var(--blue)">CI run &#8599;</a>` : '');
+      const skippedTypes = getSkippedTestTypes(pr.jobs?.skippedTests);
+      let bannerHtml = `Build job failed${nonTest.length ? ` (<strong>${nonTest.map(esc).join(', ')}</strong>)` : ''}`;
+      if (skippedTypes.length > 0) {
+        bannerHtml += ` — <strong>${skippedTypes.join(', ')} tests</strong> did not run. Other results are below.`;
+      } else {
+        bannerHtml += ` but tests ran — results below.`;
+      }
+      bannerHtml += pr.run?.html_url ? ` <a href="${esc(pr.run.html_url)}" target="_blank" style="color:var(--blue)">CI run &#8599;</a>` : '';
+      $('error-box').innerHTML = bannerHtml;
       loadPRTests(pr);
       return;
     }
@@ -785,6 +799,26 @@ function renderResultsInner(detailData) {
     if (el) { container.appendChild(el); shown++; }
   }
 
+  // Show "Did not run" placeholders for test types skipped due to a build job failure
+  const skippedTypes = getSkippedTestTypes(detailData.jobs?.skippedTests);
+  const failedNonTest = detailData.jobs?.failedNonTest || [];
+  if (skippedTypes.length > 0 && failedNonTest.length > 0) {
+    const typeLabels = { unit:'Unit Tests', integration:'Integration Tests', acceptance:'Acceptance Tests', property:'Property Tests', reference:'Reference Tests', other:'Other' };
+    for (const type of order) {
+      if (!skippedTypes.includes(type) || groups[type]) continue;
+      const wrap = document.createElement('div');
+      wrap.className = 'group';
+      const hdr = document.createElement('div');
+      hdr.className = 'group-hdr';
+      hdr.style.cursor = 'default';
+      hdr.innerHTML = `<span class="gtitle" style="color:var(--muted)">${typeLabels[type] || type}</span>` +
+        `<div class="gpill"><span style="color:var(--warning)">&#x26A0; did not run — ${failedNonTest.map(esc).join(', ')} failed</span></div>`;
+      wrap.appendChild(hdr);
+      container.appendChild(wrap);
+      shown++;
+    }
+  }
+
   if (shown === 0) {
     const crSuites = (detailData.checkRunSuites || []).filter(s => s.total > 0);
     const artifactTotal = (detailData.artifacts || [])
@@ -982,6 +1016,14 @@ function expandAll() {
 }
 
 function fails(cases) { return cases.filter(t => t.status === 'failed' || t.status === 'error').length; }
+
+// Extract unique test type names (unit/integration/etc.) from a list of skipped job names.
+function getSkippedTestTypes(skippedTests) {
+  if (!skippedTests?.length) return [];
+  return [...new Set(skippedTests.map(n =>
+    n.match(/(unit|integration|acceptance|property|reference)/i)?.[1]?.toLowerCase()
+  ).filter(Boolean))];
+}
 
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
