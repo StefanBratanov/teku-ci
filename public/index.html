@@ -24,6 +24,21 @@
   --r: 6px;
   --mono: 'Cascadia Code','Fira Code','Consolas',monospace;
 }
+body.light {
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --surface-2: #eaeef2;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --muted: #656d76;
+  --accent: #0d9488;
+  --accent-dim: rgba(13,148,136,.1);
+  --success: #1a7f37;
+  --error: #d1242f;
+  --warning: #9a6700;
+  --skipped: #57606a;
+  --blue: #0969da;
+}
 
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.5; }
 
@@ -275,6 +290,7 @@ main { padding: 16px 24px 40px; }
   <div class="header-meta">
     <span id="refresh-text">Initializing...</span>
     <div id="refresh-spinner" class="spinner" style="display:none"></div>
+    <button class="refresh-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☀</button>
     <button class="refresh-btn" id="refresh-btn" onclick="triggerRefresh()">Refresh</button>
   </div>
 </header>
@@ -316,6 +332,19 @@ let pollTimer = null;
 const testCache = new Map();
 
 const $ = id => document.getElementById(id);
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+
+function toggleTheme() {
+  const light = document.body.classList.toggle('light');
+  localStorage.setItem('teku-ci-theme', light ? 'light' : 'dark');
+  $('theme-btn').textContent = light ? '☽' : '☀';
+}
+
+if (localStorage.getItem('teku-ci-theme') === 'light') {
+  document.body.classList.add('light');
+  document.getElementById('theme-btn').textContent = '☽';
+}
 
 // ── Polling ─────────────────────────────────────────────────────────────────
 
