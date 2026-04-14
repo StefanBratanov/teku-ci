@@ -966,7 +966,8 @@ function buildGroup(type, artifacts, q) {
     <div class="gpill">${f ? `<span class="gf">&#x2691; ${f} failed</span>` : ''}<span class="gt">${total} shown</span></div>`;
 
   const body = document.createElement('div');
-  body.className = 'group-body';
+  body.className = 'group-body closed';
+  hdr.classList.add('closed');
   hdr.addEventListener('click', () => { hdr.classList.toggle('closed'); body.classList.toggle('closed'); });
 
   for (const s of suites) body.appendChild(buildSuite(s));
@@ -1015,7 +1016,8 @@ function buildSuite(suite) {
     </div>`;
 
   const cases = document.createElement('div');
-  cases.className = 'suite-cases';
+  cases.className = 'suite-cases closed';
+  hdr.classList.add('closed');
 
   const sorted = [...suite.testcases].sort((a, b) =>
     ({failed:0,error:0,skipped:1,passed:2}[a.status]??3) - ({failed:0,error:0,skipped:1,passed:2}[b.status]??3));
@@ -1059,13 +1061,9 @@ function buildTC(tc) {
     if (btn && pre) btn.addEventListener('click', e => {
       e.stopPropagation();
       const v = pre.classList.toggle('open');
-      btn.textContent = v ? '&#x25BC; Stack trace' : '&#x25BA; Stack trace';
+      btn.innerHTML = v ? '&#x25BC; Stack trace' : '&#x25BA; Stack trace';
     });
 
-    if (tc.status === 'failed' || tc.status === 'error') {
-      detail.classList.add('open');
-      hdr.classList.add('open');
-    }
   }
   return el;
 }
